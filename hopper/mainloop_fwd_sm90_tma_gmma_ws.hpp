@@ -155,6 +155,7 @@ struct CollectiveMainloopFwd {
         Element const* ptr_V;
         typename Seqlen_traits::LayoutT layout_V;
         float const softmax_scale_log2;
+        int * __restrict__ cache_batch_idx;
     };
 
     // Device side kernel params
@@ -167,6 +168,7 @@ struct CollectiveMainloopFwd {
         TMA_K tma_load_K;
         TMA_V tma_load_V;
         float const softmax_scale_log2;
+        int * __restrict__ cache_batch_idx;
     };
 
 
@@ -196,7 +198,7 @@ struct CollectiveMainloopFwd {
         return {args.layout_Q, args.layout_K, args.layout_V,
                 cutlass::FastDivmod(cute::ceil_div(get<2>(args.layout_Q.shape()), get<2>(args.layout_K.shape()))),
                 tma_load_Q, tma_load_K, tma_load_V,
-                args.softmax_scale_log2};
+                args.softmax_scale_log2, args.cache_batch_idx};
     }
 
     /// Issue Tma Descriptor Prefetch -- ideally from a single thread for best performance
@@ -251,6 +253,7 @@ struct CollectiveMainloopFwd {
         Tensor mV = mainloop_params.tma_load_V.get_tma_tensor(mainloop_params.layout_V.shape());
 
         auto [m_block, bidh, bidb] = block_coord;
+        const int bidb_cache = mainloop_params.cache_batch_idx == nullptr ? bidb : mainloop_params.cache_batch_idx[bidb];
         int bidh_kv = mainloop_params.qhead_per_khead_divmod.divide(bidh);
 
         // Prepare the TMA loads
@@ -260,9 +263,9 @@ struct CollectiveMainloopFwd {
         Tensor gQ = seqlen_traits_q.get_local_tile_tensor(
             mQ, select<0, 2>(TileShape_MNK{}), bidh, bidb)(_, _, m_block);  // (M, K)
         Tensor gK = seqlen_traits_k.get_local_tile_tensor(
-            mK, select<1, 2>(TileShape_MNK{}), bidh_kv, bidb);  // (N, K, _)
+            mK, select<1, 2>(TileShape_MNK{}), bidh_kv, bidb_cache);  // (N, K, _)
         Tensor gV = seqlen_traits_k.get_local_tile_tensor(
-            mV, select<1, 2>(TileShape_MNK{}), bidh_kv, bidb);  // (N, K, _)
+            mV, select<1, 2>(TileShape_MNK{}), bidh_kv, bidb_cache);  // (N, K, _)
 
         Tensor sQ_x = make_tensor(sQ.data(), make_layout(sQ.layout(), Layout<_1>{}));
         Tensor gQ_x = make_tensor(gQ.data(), make_layout(gQ.layout(), Layout<_1>{}));
@@ -374,6 +377,7 @@ struct CollectiveMainloopFwd {
         Tensor mV = mainloop_params.tma_load_V.get_tma_tensor(mainloop_params.layout_V.shape());
 
         auto [m_block, bidh, bidb] = block_coord;
+        const int bidb_cache = mainloop_params.cache_batch_idx == nullptr ? bidb : mainloop_params.cache_batch_idx[bidb];
         int bidh_kv = mainloop_params.qhead_per_khead_divmod.divide(bidh);
 
         // Prepare the TMA loads
@@ -383,9 +387,9 @@ struct CollectiveMainloopFwd {
         Tensor gQ = seqlen_traits_q.get_local_tile_tensor(
             mQ, select<0, 2>(TileShape_MNK{}), bidh, bidb)(_, _, m_block);  // (M, K)
         Tensor gK = seqlen_traits_k.get_local_tile_tensor(
-            mK, select<1, 2>(TileShape_MNK{}), bidh_kv, bidb);  // (N, K, _)
+            mK, select<1, 2>(TileShape_MNK{}), bidh_kv, bidb_cache);  // (N, K, _)
         Tensor gV = seqlen_traits_k.get_local_tile_tensor(
-            mV, select<1, 2>(TileShape_MNK{}), bidh_kv, bidb);  // (N, K, _)
+            mV, select<1, 2>(TileShape_MNK{}), bidh_kv, bidb_cache);  // (N, K, _)
 
         Tensor sQ_x = make_tensor(sQ.data(), make_layout(sQ.layout(), Layout<_1>{}));
         Tensor gQ_x = make_tensor(gQ.data(), make_layout(gQ.layout(), Layout<_1>{}));
