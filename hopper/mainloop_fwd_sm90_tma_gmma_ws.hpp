@@ -79,7 +79,7 @@ struct SmemTransposeFp8_64x64 {
   }
 };
 
-template <typename Ktraits, bool Is_causal, typename Seqlen_traits>
+template <typename Ktraits, bool Is_causal, typename Seqlen_traits, bool Is_split=false>
 struct CollectiveMainloopFwd {
 
     using Element = typename Ktraits::Element;
@@ -210,25 +210,29 @@ struct CollectiveMainloopFwd {
     }
 
     CUTLASS_DEVICE
-    int get_n_block_max(
-          Params const& mainloop_params, int m_block, int num_n_splits,
+    void get_n_block_min_max(
+          Params const& mainloop_params, int m_block,
           const Seqlen_traits& seqlen_traits_q,
-          const Seqlen_traits& seqlen_traits_k
+          const Seqlen_traits& seqlen_traits_k,
+          int & n_block_min,
+          int & n_block_max
         ) {
         static constexpr int kBlockM = get<0>(TileShape_MNK{});
         static constexpr int kBlockN = get<1>(TileShape_MNK{});        
         // int const seqlen_q = Seqlen_traits::kUseVarSeqLen ? seqlen_traits_q.actual_seq_len : shape<0>(mainloop_params.layout_Q);
-        // int const seqlen_k = Seqlen_traits::kUseVarSeqLen ? seqlen_traits_k.actual_seq_len : shape<0>(mainloop_params.layout_K);
+        int const full_seqlen_k = shape<0>(mainloop_params.layout_K);
         int const seqlen_q = seqlen_traits_q.actual_seq_len;
         int const seqlen_k = seqlen_traits_k.actual_seq_len;
-        int n_block_max = cute::ceil_div(seqlen_k, kBlockN);
-        if constexpr (Is_causal) {
-            n_block_max = std::min(n_block_max,
-                                   cute::ceil_div((m_block + 1) * kBlockM + seqlen_k - seqlen_q, kBlockN));
-        }
 
+        const int n_split_idx = Is_split ? blockIdx.y : 0;
+        const int num_n_splits = Is_split ? gridDim.y : 1;
+        const int n_blocks_per_split = ((full_seqlen_k + kBlockN - 1) / kBlockN + num_n_splits - 1) / num_n_splits;
+        n_block_min = n_split_idx * n_blocks_per_split;
+        n_block_max = std::min(cute::ceil_div(seqlen_k, kBlockN), (n_split_idx + 1) * n_blocks_per_split);
+        if (Is_causal) {
+          n_block_max = std::min(n_block_max,                                                                                                                                                                                                     cute::ceil_div((m_block + 1) * kBlockM + seqlen_k - seqlen_q, kBlockN));
+        }          
 
-        return n_block_max;
     }
 
     template <typename Scheduler, typename SharedStorage>
@@ -288,7 +292,8 @@ struct CollectiveMainloopFwd {
             }
         }
 
-        int n_block_max = get_n_block_max(mainloop_params, m_block, seqlen_traits_q, seqlen_traits_k);
+        int n_block_min, n_block_max;
+        get_n_block_min_max(mainloop_params, m_block, seqlen_traits_q, seqlen_traits_k, n_block_min, n_block_max);
         int n_block = n_block_max - 1;
 
         int lane_predicate = cute::elect_one_sync();
@@ -412,7 +417,8 @@ struct CollectiveMainloopFwd {
             }
         }
 
-        int n_block_max = get_n_block_max(mainloop_params, m_block, seqlen_traits_q, seqlen_traits_k);
+        int n_block_min, n_block_max;
+        get_n_block_min_max(mainloop_params, m_block, seqlen_traits_q, seqlen_traits_k, n_block_min, n_block_max);
         int n_block = n_block_max - 1;
 
         int lane_predicate = cute::elect_one_sync();
