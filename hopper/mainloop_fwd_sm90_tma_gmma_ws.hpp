@@ -211,7 +211,7 @@ struct CollectiveMainloopFwd {
 
     CUTLASS_DEVICE
     int get_n_block_max(
-          Params const& mainloop_params, int m_block, 
+          Params const& mainloop_params, int m_block, int num_n_splits,
           const Seqlen_traits& seqlen_traits_q,
           const Seqlen_traits& seqlen_traits_k
         ) {
@@ -226,6 +226,8 @@ struct CollectiveMainloopFwd {
             n_block_max = std::min(n_block_max,
                                    cute::ceil_div((m_block + 1) * kBlockM + seqlen_k - seqlen_q, kBlockN));
         }
+
+
         return n_block_max;
     }
 

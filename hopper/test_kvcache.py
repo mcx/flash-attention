@@ -2,7 +2,21 @@ import torch
 #from flash_attn_interface import flash_attn_func, flash_attn_varlen_func, flash_attn_with_kvcache
 import flash_attn_interface as fa3
 import flash_attn as fa2
+import torch.utils.benchmark as benchmark
 
+def benchmark_fa_kv(fn, repeats=10, desc='', verbose=True, **kwinputs):
+    """Use Pytorch Benchmark on the forward pass of an arbitrary function."""
+    if verbose:
+        print(desc, '- Forward pass')
+    t = benchmark.Timer(
+            stmt='fn(**kwinputs)',
+            globals={'fn': fn, 'kwinputs': kwinputs},
+            num_threads=torch.get_num_threads(),
+            )
+    m = t.timeit(repeats)
+    if verbose:
+        print(m)
+    return t, m
 
 def main():
     # *SAMPLE CONFIG*
@@ -10,7 +24,8 @@ def main():
     nheads_q = 64
     nheads_kv = 8
     headdim = 128
-    dtype = torch.bfloat16
+    #dtype = torch.bfloat16
+    dtype = torch.float16
 
     # Cache settings:
     num_caches = 8
@@ -104,8 +119,46 @@ def main():
         causal=True,
     )
 
-    print ((out0 - out2).abs().max().item());
-    print ((out1 - out3).abs().max().item());
+    print ((out0 - out2).abs().max().item())
+    print ((out1 - out3).abs().max().item())
+
+    benchmark_fa_kv(fa3.flash_attn_with_kvcache, repeats=10, desc='', verbose=True,  
+        q=q_buf_large,
+        k_cache=k_cache,
+        v_cache=v_cache,
+        cache_seqlens=cache_seqlen_large,
+        cache_batch_idx=cache_idx_large,
+        causal=True)
+
+    benchmark_fa_kv(fa3.flash_attn_with_kvcache, repeats=10, desc='', verbose=True,  
+        q=q_buf_small,
+        k_cache=k_cache,
+        v_cache=v_cache,
+        cache_seqlens=cache_seqlens_small,
+        cache_batch_idx=cache_idxs_small,
+        causal=True)
+
+    print ('fa2 ')
+
+    for k in [1, 2, 4, 8, 16, 32]:
+        benchmark_fa_kv(fa2.flash_attn_with_kvcache, repeats=10, desc='', verbose=True,
+            q=q_buf_large,
+            k_cache=k_cache,
+            v_cache=v_cache,
+            cache_seqlens=cache_seqlen_large,
+            cache_batch_idx=cache_idx_large,
+            causal=True,
+            num_splits=k)
+
+    for k in [1, 2, 4, 8, 16, 32]:
+        benchmark_fa_kv(fa2.flash_attn_with_kvcache, repeats=10, desc='', verbose=True,
+            q=q_buf_small,
+            k_cache=k_cache,
+            v_cache=v_cache,
+            cache_seqlens=cache_seqlens_small,
+            cache_batch_idx=cache_idxs_small,
+            causal=True,
+            num_splits=k)
 
 if __name__ == "__main__":
     main()
