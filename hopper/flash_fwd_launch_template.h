@@ -29,7 +29,7 @@ void run_flash_fwd(Flash_fwd_params &params, cudaStream_t stream) {
     using CollectiveMainloop = flash::CollectiveMainloopFwd<Kernel_traits, Is_causal, Seqlen_traits>;
     using CollectiveEpilogue = flash::CollectiveEpilogueFwd<Kernel_traits, Seqlen_traits>;
     using Scheduler = std::conditional_t<
-        Seqlen_traits::kUseVarSeqLen, 
+        Seqlen_traits::UseVarSeqLen, 
         flash::SingleTileScheduler,
         std::conditional_t<!Is_causal,
             flash::StaticPersistentTileScheduler,
@@ -131,7 +131,7 @@ void run_mha_fwd_hdim128(Flash_fwd_params &params, cudaStream_t stream) {
     BOOL_SWITCH(params.is_causal, Is_causal, [&] {
         SEQLEN_SWITCH(params.cu_seqlens_q, Seqlen_traits, [&] {
             // Only use Cluster if number of tiles along seqlen_q is even and not Is_causal
-            BOOL_SWITCH(cutlass::ceil_div(params.seqlen_q, 128) % 2 == 0 && !Is_causal && !Seqlen_traits::kUseVarSeqLen, UseCluster, [&] {
+            BOOL_SWITCH(cutlass::ceil_div(params.seqlen_q, 128) % 2 == 0 && !Is_causal && !Seqlen_traits::UseVarSeqLen, UseCluster, [&] {
                 run_flash_fwd<
                     Flash_fwd_kernel_traits<Headdim, 128, Is_causal ? 128 : 176, 12, 2, false, UseCluster ? 2 : 1, T>, 
                     Is_causal, Seqlen_traits
@@ -147,7 +147,7 @@ void run_mha_fwd_hdim256(Flash_fwd_params &params, cudaStream_t stream) {
     BOOL_SWITCH(params.is_causal, Is_causal, [&] {
         SEQLEN_SWITCH(params.cu_seqlens_q, Seqlen_traits, [&] {
             // Only use Cluster if number of tiles along seqlen_q is even
-            BOOL_SWITCH(cutlass::ceil_div(params.seqlen_q, 128) % 2 == 0 && !Is_causal && !Seqlen_traits::kUseVarSeqLen, UseCluster, [&] {
+            BOOL_SWITCH(cutlass::ceil_div(params.seqlen_q, 128) % 2 == 0 && !Is_causal && !Seqlen_traits::UseVarSeqLen, UseCluster, [&] {
                 run_flash_fwd<
                     Flash_fwd_kernel_traits<Headdim, 128, 80, 12, 2, false, UseCluster ? 2 : 1, T>, 
                     Is_causal, Seqlen_traits
