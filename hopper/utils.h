@@ -348,6 +348,21 @@ __forceinline__ __device__ void write_O(
     }
 }
 
+template <bool Split=false>
+__forceinline__ __device__  cute::tuple<int32_t, int32_t, int32_t, int32_t> getTensorCoord(const cute::tuple<int32_t, int32_t, int32_t> & coord, const int & h)
+{
+	auto [blockIdxX, blockIdxY, blockIdxZ] = coord;
+	const int m_block = blockIdxX;
+	// The block index for the batch.
+	const int bidb = Split ? blockIdxZ / h : blockIdxZ;
+	// The block index for the head.
+	const int bidh = Split ? blockIdxZ - bidb * h : blockIdxY;
+	// The block index for the split.
+        const int n_split_idx = Split ? blockIdxY : 0;
+
+	return {m_block, bidh, bidb, n_split_idx};
+}
+
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 }  // namespace flash

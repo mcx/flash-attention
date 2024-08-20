@@ -156,6 +156,8 @@ struct CollectiveMainloopFwd {
         typename Seqlen_traits::LayoutT layout_V;
         float const softmax_scale_log2;
         int const* cache_batch_idx;
+	int h;
+	int num_splits;
     };
 
     // Device side kernel params
@@ -169,6 +171,8 @@ struct CollectiveMainloopFwd {
         TMA_V tma_load_V;
         float const softmax_scale_log2;
         int const* cache_batch_idx;
+	int h;
+	int num_splits;
     };
 
 
@@ -214,6 +218,7 @@ struct CollectiveMainloopFwd {
           Params const& mainloop_params, int m_block,
           const Seqlen_traits& seqlen_traits_q,
           const Seqlen_traits& seqlen_traits_k,
+	  int n_split_idx,
           int & n_block_min,
           int & n_block_max
         ) {
@@ -224,8 +229,7 @@ struct CollectiveMainloopFwd {
         int const seqlen_q = seqlen_traits_q.actual_seq_len;
         int const seqlen_k = seqlen_traits_k.actual_seq_len;
 
-        const int n_split_idx = Is_split ? blockIdx.y : 0;
-        const int num_n_splits = Is_split ? gridDim.y : 1;
+        const int num_n_splits = Is_split ? mainloop_params.num_splits : 1;
         const int n_blocks_per_split = ((full_seqlen_k + kBlockN - 1) / kBlockN + num_n_splits - 1) / num_n_splits;
         n_block_min = n_split_idx * n_blocks_per_split;
         n_block_max = std::min(cute::ceil_div(seqlen_k, kBlockN), (n_split_idx + 1) * n_blocks_per_split);
@@ -246,7 +250,7 @@ struct CollectiveMainloopFwd {
          Scheduler& scheduler,
          typename Scheduler::Params const& scheduler_params,
          typename Scheduler::WorkTileInfo& work_tile_info,
-         cute::tuple<int32_t, int32_t, int32_t> block_coord,
+         cute::tuple<int32_t, int32_t, int32_t, int32_t> block_coord,
          int work_idx,
          const Seqlen_traits& seqlen_traits_q,
          const Seqlen_traits& seqlen_traits_k
@@ -260,7 +264,7 @@ struct CollectiveMainloopFwd {
         Tensor mK = mainloop_params.tma_load_K.get_tma_tensor(mainloop_params.layout_K.shape());
         Tensor mV = mainloop_params.tma_load_V.get_tma_tensor(mainloop_params.layout_V.shape());
 
-        auto [m_block, bidh, bidb] = block_coord;
+        auto [m_block, bidh, bidb, n_split_idx] = block_coord;
         const int bidb_cache = mainloop_params.cache_batch_idx == nullptr ? bidb : mainloop_params.cache_batch_idx[bidb];        
         int bidh_kv = mainloop_params.qhead_per_khead_divmod.divide(bidh);
 
@@ -293,7 +297,7 @@ struct CollectiveMainloopFwd {
         }
 
         int n_block_min, n_block_max;
-        get_n_block_min_max(mainloop_params, m_block, seqlen_traits_q, seqlen_traits_k, n_block_min, n_block_max);
+        get_n_block_min_max(mainloop_params, m_block, seqlen_traits_q, seqlen_traits_k, n_split_idx, n_block_min, n_block_max);
         int n_block = n_block_max - 1;
 
         int lane_predicate = cute::elect_one_sync();
@@ -353,7 +357,7 @@ struct CollectiveMainloopFwd {
          Scheduler& scheduler,
          typename Scheduler::Params const& scheduler_params,
          typename Scheduler::WorkTileInfo& work_tile_info,
-         cute::tuple<int32_t, int32_t, int32_t> block_coord,
+         cute::tuple<int32_t, int32_t, int32_t, int32_t> block_coord,
          int work_idx,
          const Seqlen_traits& seqlen_traits_q,
          const Seqlen_traits& seqlen_traits_k         
@@ -385,7 +389,7 @@ struct CollectiveMainloopFwd {
         Tensor mK = mainloop_params.tma_load_K.get_tma_tensor(mainloop_params.layout_K.shape());
         Tensor mV = mainloop_params.tma_load_V.get_tma_tensor(mainloop_params.layout_V.shape());
 
-        auto [m_block, bidh, bidb] = block_coord;
+        auto [m_block, bidh, bidb, n_split_idx] = block_coord;
         const int bidb_cache = mainloop_params.cache_batch_idx == nullptr ? bidb : mainloop_params.cache_batch_idx[bidb];
         int bidh_kv = mainloop_params.qhead_per_khead_divmod.divide(bidh);
 
@@ -418,7 +422,7 @@ struct CollectiveMainloopFwd {
         }
 
         int n_block_min, n_block_max;
-        get_n_block_min_max(mainloop_params, m_block, seqlen_traits_q, seqlen_traits_k, n_block_min, n_block_max);
+        get_n_block_min_max(mainloop_params, m_block, seqlen_traits_q, seqlen_traits_k, n_split_idx, n_block_min, n_block_max);
         int n_block = n_block_max - 1;
 
         int lane_predicate = cute::elect_one_sync();

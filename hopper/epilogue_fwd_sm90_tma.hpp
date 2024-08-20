@@ -126,11 +126,11 @@ struct CollectiveEpilogueFwd {
           SharedStorage& shared_storage,
           TiledMma tiled_mma,
           int thread_idx,
-          cute::tuple<int32_t, int32_t, int32_t> const& block_coord,
+          cute::tuple<int32_t, int32_t, int32_t, int32_t> const& block_coord,
           const Seqlen_traits& seqlen_traits_q
           ) {
 
-        auto [m_block, bidh, bidb] = block_coord;
+        auto [m_block, bidh, bidb, n_split_idx] = block_coord;
         Tensor sO = make_tensor(make_smem_ptr(shared_storage.smem_o.data()), SmemLayoutO{});
         auto smem_tiled_copy_O = make_tiled_copy_C(SmemCopyAtomO{}, tiled_mma);
         auto smem_thr_copy_O = smem_tiled_copy_O.get_thread_slice(thread_idx);
@@ -188,12 +188,12 @@ struct CollectiveEpilogueFwd {
           SharedStorage& shared_storage,
           TiledMma tiled_mma,
           int thread_idx,
-          cute::tuple<int32_t, int32_t, int32_t> const& block_coord,
+          cute::tuple<int32_t, int32_t, int32_t, int32_t> const& block_coord,
           const Seqlen_traits& seqlen_traits_q
           ) {
         // using SmemLayoutrO = typename Ktraits::SmemLayoutrO;
         // using TiledCopyrO = typename Ktraits::TiledCopyrO;
-        auto [m_block, bidh, bidb] = block_coord;        
+        auto [m_block, bidh, bidb, n_split_idx] = block_coord;        
 
         TiledCopyrO rmem_tiled_copy_O;
         Tensor sOacc = make_tensor(make_smem_ptr(shared_storage.smem_o.data()), SmemLayoutrO{});
@@ -259,10 +259,10 @@ struct CollectiveEpilogueFwd {
           Params const& epilogue_params,
           SharedStorage& shared_storage,
           int thread_idx,
-          cute::tuple<int32_t, int32_t, int32_t> const& block_coord,
+          cute::tuple<int32_t, int32_t, int32_t, int32_t> const& block_coord,
           const Seqlen_traits& seqlen_traits_q
           ) {
-        auto [m_block, bidh, bidb] = block_coord;
+        auto [m_block, bidh, bidb, n_split_idx] = block_coord;
         Tensor mO = make_tensor(make_gmem_ptr(epilogue_params.ptr_O), epilogue_params.layout_O);
         Tensor gO = seqlen_traits_q.get_local_tile_tensor(
             mO, select<0, 2>(TileShape_MNK{}), bidh, bidb

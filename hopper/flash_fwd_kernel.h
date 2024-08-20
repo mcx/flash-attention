@@ -113,8 +113,8 @@ __global__ void __launch_bounds__(Ktraits::kNWarps * cutlass::NumThreadsPerWarp,
             for (auto work_tile_info = scheduler.get_initial_work();
                  work_tile_info.is_valid(scheduler_params);
                  work_tile_info = scheduler.template get_next_work</*IsProducer=*/true>(scheduler_params, work_tile_info)) {
-                auto block_coord = work_tile_info.get_block_coord(scheduler_params);
-                auto [m_block, bidh, bidb] = block_coord;
+                auto block_coord = getTensorCoord<Is_split>(work_tile_info.get_block_coord(scheduler_params), mainloop_params.h);
+                auto [m_block, bidh, bidb, n_split_idx] = block_coord;
 
                 seqlen_traits_q.init(bidb);
                 seqlen_traits_k.init(bidb);
@@ -123,7 +123,7 @@ __global__ void __launch_bounds__(Ktraits::kNWarps * cutlass::NumThreadsPerWarp,
                 }
                 int n_block_min, n_block_max;
                 collective_mainloop.get_n_block_min_max(
-                    mainloop_params, m_block, seqlen_traits_q, seqlen_traits_k, n_block_min, n_block_max);
+                    mainloop_params, m_block, seqlen_traits_q, seqlen_traits_k, n_split_idx, n_block_min, n_block_max);
                 if ((Is_causal || seqlen_traits_k.kUseVarSeqLen) && n_block_max <= n_block_min) {
                     scheduler.prefetch_next_work(scheduler_params, work_tile_info);
                     scheduler.broadcast_next_work(work_tile_info);
@@ -160,8 +160,8 @@ __global__ void __launch_bounds__(Ktraits::kNWarps * cutlass::NumThreadsPerWarp,
             Tensor tOrO = partition_fragment_C(tiled_mma1, select<0, 2>(TileShape_MNK{}));
             flash::Softmax<2 * (2 * kBlockM / NumMmaThreads)> softmax;
 
-            auto block_coord = work_tile_info.get_block_coord(scheduler_params);
-            auto [m_block, bidh, bidb] = block_coord;
+            auto block_coord = getTensorCoord<Is_split>(work_tile_info.get_block_coord(scheduler_params), mainloop_params.h);
+            auto [m_block, bidh, bidb, n_split_idx] = block_coord;
 
             seqlen_traits_q.init(bidb);
             seqlen_traits_k.init(bidb);
@@ -170,7 +170,7 @@ __global__ void __launch_bounds__(Ktraits::kNWarps * cutlass::NumThreadsPerWarp,
             }
             int n_block_min, n_block_max;
             collective_mainloop.get_n_block_min_max(
-                mainloop_params, m_block, seqlen_traits_q, seqlen_traits_k, n_block_min, n_block_max);
+                mainloop_params, m_block, seqlen_traits_q, seqlen_traits_k, n_split_idx, n_block_min, n_block_max);
             if ((Is_causal || seqlen_traits_k.kUseVarSeqLen) && n_block_max <= n_block_min) {  // We exit early and write 0 to gO and -inf to gLSE.
                 collective_epilogue.store_zero(epilogue_params, shared_storage, threadIdx.x - NumCopyThreads, block_coord, seqlen_traits_q);
                 continue;
@@ -292,8 +292,8 @@ __global__ void __launch_bounds__(Ktraits::kNWarps * cutlass::NumThreadsPerWarp,
         for (auto work_tile_info = scheduler.get_initial_work();
                 work_tile_info.is_valid(scheduler_params);
                 work_tile_info = scheduler.template get_next_work</*IsProducer=*/true>(scheduler_params, work_tile_info)) {
-            auto block_coord = work_tile_info.get_block_coord(scheduler_params);
-            auto [m_block, bidh, bidb] = block_coord;
+            auto block_coord = getTensorCoord<Is_split>(work_tile_info.get_block_coord(scheduler_params), mainloop_params.h);
+            auto [m_block, bidh, bidb, n_split_idx] = block_coord;
 
             if constexpr(kUseVarSeqLen) {
                 seqlen_traits_q.init(bidb);
@@ -304,7 +304,7 @@ __global__ void __launch_bounds__(Ktraits::kNWarps * cutlass::NumThreadsPerWarp,
             }
             int n_block_min, n_block_max;
             collective_mainloop.get_n_block_min_max(
-                mainloop_params, m_block, seqlen_traits_q, seqlen_traits_k, n_block_min, n_block_max);
+                mainloop_params, m_block, seqlen_traits_q, seqlen_traits_k, n_split_idx, n_block_min, n_block_max);
             if constexpr(Is_causal) {
                 if(n_block_max <= n_block_min) {
                     scheduler.prefetch_next_work(scheduler_params, work_tile_info);
@@ -346,8 +346,8 @@ __global__ void __launch_bounds__(Ktraits::kNWarps * cutlass::NumThreadsPerWarp,
             Tensor tOrO = partition_fragment_C(tiled_mma1, select<0, 2>(TileShape_MNK{}));
             flash::Softmax<2 * (2 * kBlockM / NumMmaThreads), Use_max_offset> softmax;
 
-            auto block_coord = work_tile_info.get_block_coord(scheduler_params);
-            auto [m_block, bidh, bidb] = block_coord;
+            auto block_coord = getTensorCoord<Is_split>(work_tile_info.get_block_coord(scheduler_params), mainloop_params.h);
+            auto [m_block, bidh, bidb, n_split_idx] = block_coord;
 
             if constexpr(kUseVarSeqLen) {
                 seqlen_traits_q.init(bidb);
@@ -358,7 +358,7 @@ __global__ void __launch_bounds__(Ktraits::kNWarps * cutlass::NumThreadsPerWarp,
             }
             int n_block_min, n_block_max;
             collective_mainloop.get_n_block_min_max(
-                mainloop_params, m_block, seqlen_traits_q, seqlen_traits_k, n_block_min, n_block_max);
+                mainloop_params, m_block, seqlen_traits_q, seqlen_traits_k, n_split_idx, n_block_min, n_block_max);
             if constexpr(Is_causal) {
                 if(n_block_max <= n_block_min) {  // We exit early and write 0 to gO and -inf to gLSE.
                     collective_epilogue.store_zero(epilogue_params, shared_storage, threadIdx.x - NumCopyThreads, block_coord, seqlen_traits_q);

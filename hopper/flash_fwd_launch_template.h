@@ -29,7 +29,7 @@ void run_flash_fwd(Flash_fwd_params &params, cudaStream_t stream) {
     using CollectiveMainloop = flash::CollectiveMainloopFwd<Kernel_traits, Is_causal, Seqlen_traits, Is_split>;
     using CollectiveEpilogue = flash::CollectiveEpilogueFwd<Kernel_traits, Seqlen_traits>;
     using Scheduler = std::conditional_t<
-        Seqlen_traits::kUseVarSeqLen && !Is_split, 
+        Seqlen_traits::kUseVarSeqLen,
         flash::SingleTileScheduler,
         std::conditional_t<!Is_causal,
             flash::StaticPersistentTileScheduler,
@@ -58,7 +58,9 @@ void run_flash_fwd(Flash_fwd_params &params, cudaStream_t stream) {
                 params.v_row_stride, params.v_head_stride, params.v_batch_stride
             ),  // layout_V
             params.scale_softmax_log2,
-            params.cache_batch_idx
+            params.cache_batch_idx,
+	    params.h,
+	    params.num_splits
         });
     typename CollectiveEpilogue::Params epilogue_params =
         CollectiveEpilogue::to_underlying_arguments({
@@ -76,7 +78,8 @@ void run_flash_fwd(Flash_fwd_params &params, cudaStream_t stream) {
     int num_blocks_m = cutlass::ceil_div(params.seqlen_q, Kernel_traits::kBlockM);
     num_blocks_m = cutlass::ceil_div(num_blocks_m, size<0>(ClusterShape{})) * size<0>(ClusterShape{});
 
-    typename Scheduler::Arguments scheduler_args = {num_blocks_m,  params.h, params.b,  params.tile_count_semaphore};
+    typename Scheduler::Arguments scheduler_args = {num_blocks_m,  params.num_splits > 1 ? params.num_splits : params.h, 
+	    params.num_splits > 1 ? params.h * params.b : params.b,  params.tile_count_semaphore};
     typename Scheduler::Params scheduler_params = Scheduler::to_underlying_arguments(scheduler_args);
 
     // Get the ptr to kernel function.
