@@ -86,7 +86,7 @@ def main():
         cache_seqlens=cache_seqlen_large,
         cache_batch_idx=cache_idx_large,
         causal=True,
-        num_splits=2
+        num_splits=1
     )
 
     # Second for n-1 small queries
