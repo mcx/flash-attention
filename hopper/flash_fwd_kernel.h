@@ -124,7 +124,7 @@ __global__ void __launch_bounds__(Ktraits::kNWarps * cutlass::NumThreadsPerWarp,
                 int n_block_min, n_block_max;
                 collective_mainloop.get_n_block_min_max(
                     mainloop_params, m_block, seqlen_traits_q, seqlen_traits_k, n_block_min, n_block_max);
-                if ((Is_causal || seqlen_traits_k.kUseVarSeqLen) && n_block_max <= 0) {
+                if ((Is_causal || seqlen_traits_k.kUseVarSeqLen) && n_block_max <= n_block_min) {
                     scheduler.prefetch_next_work(scheduler_params, work_tile_info);
                     scheduler.broadcast_next_work(work_tile_info);
                     continue;
@@ -171,7 +171,7 @@ __global__ void __launch_bounds__(Ktraits::kNWarps * cutlass::NumThreadsPerWarp,
             int n_block_min, n_block_max;
             collective_mainloop.get_n_block_min_max(
                 mainloop_params, m_block, seqlen_traits_q, seqlen_traits_k, n_block_min, n_block_max);
-            if ((Is_causal || seqlen_traits_k.kUseVarSeqLen) && n_block_max <= 0) {  // We exit early and write 0 to gO and -inf to gLSE.
+            if ((Is_causal || seqlen_traits_k.kUseVarSeqLen) && n_block_max <= n_block_min) {  // We exit early and write 0 to gO and -inf to gLSE.
                 collective_epilogue.store_zero(epilogue_params, shared_storage, threadIdx.x - NumCopyThreads, block_coord, seqlen_traits_q);
                 continue;
             }
@@ -306,7 +306,7 @@ __global__ void __launch_bounds__(Ktraits::kNWarps * cutlass::NumThreadsPerWarp,
             collective_mainloop.get_n_block_min_max(
                 mainloop_params, m_block, seqlen_traits_q, seqlen_traits_k, n_block_min, n_block_max);
             if constexpr(Is_causal) {
-                if(n_block_max <= 0) {
+                if(n_block_max <= n_block_min) {
                     scheduler.prefetch_next_work(scheduler_params, work_tile_info);
                     scheduler.broadcast_next_work(work_tile_info);
                     // need to sync producer warpgroup
@@ -360,7 +360,7 @@ __global__ void __launch_bounds__(Ktraits::kNWarps * cutlass::NumThreadsPerWarp,
             collective_mainloop.get_n_block_min_max(
                 mainloop_params, m_block, seqlen_traits_q, seqlen_traits_k, n_block_min, n_block_max);
             if constexpr(Is_causal) {
-                if(n_block_max <= 0) {  // We exit early and write 0 to gO and -inf to gLSE.
+                if(n_block_max <= n_block_min) {  // We exit early and write 0 to gO and -inf to gLSE.
                     collective_epilogue.store_zero(epilogue_params, shared_storage, threadIdx.x - NumCopyThreads, block_coord, seqlen_traits_q);
                     continue;
                 }
