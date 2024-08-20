@@ -79,7 +79,7 @@ struct SmemTransposeFp8_64x64 {
   }
 };
 
-template <typename Ktraits, bool Is_causal, typename Seqlen_traits, bool Is_split=false>
+template <typename Ktraits, bool Is_causal, typename Seqlen_traits, bool Is_split>
 struct CollectiveMainloopFwd {
 
     using Element = typename Ktraits::Element;
@@ -320,7 +320,7 @@ struct CollectiveMainloopFwd {
         if (lane_predicate) {
             // CUTLASS_PRAGMA_NO_UNROLL
             #pragma unroll 2
-            for (; n_block > 0; --n_block) {
+            for (; n_block > n_block_min; --n_block) {
                 pipeline_k.producer_acquire(smem_pipe_write_k);
                 copy(mainloop_params.tma_load_K.with(*pipeline_k.producer_get_barrier(smem_pipe_write_k), mcast_mask_kv),
                     tKgK(_, n_block - 1), tKsK(_, smem_pipe_write_k.index()));

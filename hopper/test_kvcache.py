@@ -133,7 +133,7 @@ def main():
         cache_seqlens=cache_seqlen_large,
         cache_batch_idx=cache_idx_large,
         causal=True,
-        num_splits=1)
+        num_splits=2)
 
     benchmark_fa_kv(fa3.flash_attn_with_kvcache, repeats=10, desc='', verbose=True,  
         q=q_buf_small,
@@ -142,7 +142,7 @@ def main():
         cache_seqlens=cache_seqlens_small,
         cache_batch_idx=cache_idxs_small,
         causal=True,
-        num_splits=1)
+        num_splits=2)
 
     print ('fa2 ')
 
