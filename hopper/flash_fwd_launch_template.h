@@ -119,8 +119,8 @@ void run_flash_fwd(Flash_fwd_params &params, cudaStream_t stream) {
 	    auto numOElem = size(epilogue_params.layout_O);
 	    thrust::device_ptr<float> devOAccPtr =
 		    thrust::device_pointer_cast(params.oaccum_ptr);
-	    thrust::transform(devOAccPtr, devOAccPtr + numOElem, static_cast<OutputType*>(params.o_ptr),
-			    flash::TypeConvert<Element>());
+	    thrust::transform(devOAccPtr, devOAccPtr + numOElem, static_cast<Element*>(params.o_ptr),
+		    flash::TypeConvert<Element>());
     }
 }
 
