@@ -3,6 +3,8 @@
  ******************************************************************************/
 
 #pragma once
+#include <thrust/device_vector.h>
+#include <thrust/host_vector.h>
 
 #include "cute/tensor.hpp"
 
@@ -111,6 +113,15 @@ void run_flash_fwd(Flash_fwd_params &params, cudaStream_t stream) {
         launch_params, kernel, mainloop_params, epilogue_params, 
         scheduler_params, seqlen_traits_q, seqlen_traits_k);
     CHECK_CUDA_KERNEL_LAUNCH();
+
+
+    if (Is_split) { 
+	    auto numOElem = size(epilogue_params.layout_O);
+	    thrust::device_ptr<float> devOAccPtr =
+		    thrust::device_pointer_cast(params.oaccum_ptr);
+	    thrust::transform(devOAccPtr, devOAccPtr + numOElem, static_cast<OutputType*>(params.o_ptr),
+			    flash::TypeConvert<Element>());
+    }
 }
 
 template<typename T>

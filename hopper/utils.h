@@ -364,5 +364,22 @@ __forceinline__ __device__  cute::tuple<int32_t, int32_t, int32_t, int32_t> getT
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+  template <typename T> struct TypeConvert {
+    __host__ __device__ T operator()(float a) { return T(a); }
+  };
+ 
+  template <> struct TypeConvert<cutlass::float_e4m3_t> {
+   __host__ __device__ cutlass::float_e4m3_t operator()(float a) {
+      return cutlass::float_e4m3_t::from_float(a);
+    }
+  };
+ 
+  template <> struct TypeConvert<cutlass::half_t> {
+   __host__ __device__ cutlass::half_t operator()(float a) {
+      return cutlass::half_t::convert(a);
+    }
+  };
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
 
 }  // namespace flash

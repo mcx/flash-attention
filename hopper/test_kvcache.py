@@ -86,7 +86,7 @@ def main():
         cache_seqlens=cache_seqlen_large,
         cache_batch_idx=cache_idx_large,
         causal=True,
-        num_splits=1
+        num_splits=2
     )
 
     # Second for n-1 small queries
@@ -97,7 +97,7 @@ def main():
         cache_seqlens=cache_seqlens_small,
         cache_batch_idx=cache_idxs_small,
         causal=True,
-        num_splits=1
+        num_splits=2
     )
 
       # Call flash attn
