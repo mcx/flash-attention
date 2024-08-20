@@ -57,11 +57,11 @@ struct SharedStorageQKVOVt {
 
 // If Share_Q_K_smem is true, that forces Is_Q_in_regs to be true
 template<int kHeadDim_, int kBlockM_, int kBlockN_, int kNWarps_, int kStages_, bool Is_Q_in_regs_=false,
-         int kClusterM_ = 1, typename elem_type=cutlass::half_t>
+         int kClusterM_ = 1, typename elem_type=cutlass::half_t, bool Is_split=false>
 struct Flash_fwd_kernel_traits {
     using Element = elem_type;
     using ElementAccum = float;
-    using OutputType = elem_type;
+    using OutputType = typename std::conditional<Is_split, float, elem_type>::type;  
     using index_t = int64_t;
 
     // The number of threads.
@@ -127,7 +127,7 @@ struct Flash_fwd_kernel_traits {
 
     using SmemCopyAtomQ = Copy_Atom<cute::SM75_U32x4_LDSM_N, Element>;
 
-    using SharedStorage = SharedStorageQKVO<kStages, Element, Element, Element, SmemLayoutQ,
+    using SharedStorage = SharedStorageQKVO<kStages, Element, Element, OutputType, SmemLayoutQ,
                                             SmemLayoutK, SmemLayoutV, SmemLayoutO>;
 
     using MainloopPipeline = typename cutlass::PipelineTmaAsync<kStages>;

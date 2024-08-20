@@ -17,7 +17,7 @@ namespace flash {
 using namespace cute;
 
 // template <int kHeadDim_, int kBlockM_, int kBlockN_, int kNWarps_, typename Element_>
-template <typename Ktraits, typename Seqlen_traits>
+template <typename Ktraits, typename Seqlen_traits, bool Is_split>
 struct CollectiveEpilogueFwd {
 
     using Element = typename Ktraits::OutputType;    
@@ -37,10 +37,10 @@ struct CollectiveEpilogueFwd {
         decltype(cute::get<0>(TileShape_MNK{})), decltype(cute::get<2>(TileShape_MNK{}))>());
     using SmemLayoutO = decltype(tile_to_shape(SmemLayoutAtomO{}, select<0, 2>(TileShape_MNK{})));
 
-    using SmemCopyAtomO = Copy_Atom<cute::SM90_U32x4_STSM_N, Element>;
+    using SmemCopyAtomO = std::conditional_t<Is_split, Copy_Atom<DefaultCopy, Element>, Copy_Atom<cute::SM90_U32x4_STSM_N, Element>>;
     using SharedStorage = cute::array_aligned<Element, cute::cosize_v<SmemLayoutO>>;
 
-    using GmemTiledCopyOTMA = cute::SM90_TMA_STORE;
+    using GmemTiledCopyOTMA = std::conditional_t<Is_split, cute::SM90_TMA_REDUCE_ADD, cute::SM90_TMA_STORE>;
     using TMA_O = decltype(make_tma_copy(
         GmemTiledCopyOTMA{},
         make_tensor(

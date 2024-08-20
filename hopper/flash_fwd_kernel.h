@@ -27,7 +27,7 @@ using namespace cute;
 template <typename Ktraits, bool Is_causal, typename TileScheduler, typename Seqlen_traits, bool Is_split>
 __global__ void __launch_bounds__(Ktraits::kNWarps * cutlass::NumThreadsPerWarp, 1)
     compute_attn_ws(CUTE_GRID_CONSTANT typename CollectiveMainloopFwd<Ktraits, Is_causal, Seqlen_traits, Is_split>::Params const mainloop_params,
-                    CUTE_GRID_CONSTANT typename CollectiveEpilogueFwd<Ktraits, Seqlen_traits>::Params const epilogue_params,
+                    CUTE_GRID_CONSTANT typename CollectiveEpilogueFwd<Ktraits, Seqlen_traits, Is_split>::Params const epilogue_params,
                     CUTE_GRID_CONSTANT typename TileScheduler::Params const scheduler_params,
                     Seqlen_traits seqlen_traits_q, Seqlen_traits seqlen_traits_k
                     ) {
@@ -48,7 +48,7 @@ __global__ void __launch_bounds__(Ktraits::kNWarps * cutlass::NumThreadsPerWarp,
     // constexpr int kHeadDim = Ktraits::kHeadDim;
 
     using CollectiveMainloop = CollectiveMainloopFwd<Ktraits, Is_causal, Seqlen_traits, Is_split>;
-    using CollectiveEpilogue = CollectiveEpilogueFwd<Ktraits, Seqlen_traits>;
+    using CollectiveEpilogue = CollectiveEpilogueFwd<Ktraits, Seqlen_traits, Is_split>;
 
     using MainloopPipeline = typename Ktraits::MainloopPipeline;
     using PipelineParams = typename MainloopPipeline::Params;
@@ -193,7 +193,7 @@ __global__ void __launch_bounds__(Ktraits::kNWarps * cutlass::NumThreadsPerWarp,
 template <typename Ktraits, bool Is_causal, typename TileScheduler, typename Seqlen_traits, bool Is_split>
 __global__ void __launch_bounds__(Ktraits::kNWarps * cutlass::NumThreadsPerWarp, 1)
     compute_attn_ws_fp8(CUTE_GRID_CONSTANT typename CollectiveMainloopFwd<Ktraits, Is_causal, Seqlen_traits, Is_split>::Params const mainloop_params,
-                        CUTE_GRID_CONSTANT typename CollectiveEpilogueFwd<Ktraits, Seqlen_traits>::Params const epilogue_params,
+                        CUTE_GRID_CONSTANT typename CollectiveEpilogueFwd<Ktraits, Seqlen_traits, Is_split>::Params const epilogue_params,
                         CUTE_GRID_CONSTANT typename TileScheduler::Params const scheduler_params,
                         Seqlen_traits seqlen_traits_q, Seqlen_traits seqlen_traits_k
                         ) {
@@ -219,7 +219,7 @@ __global__ void __launch_bounds__(Ktraits::kNWarps * cutlass::NumThreadsPerWarp,
     static constexpr bool Use_max_offset = !(Is_causal && Ktraits::kHeadDim == 128);    
 
     using CollectiveMainloop = CollectiveMainloopFwd<Ktraits, Is_causal, Seqlen_traits, Is_split>;
-    using CollectiveEpilogue = CollectiveEpilogueFwd<Ktraits, Seqlen_traits>;
+    using CollectiveEpilogue = CollectiveEpilogueFwd<Ktraits, Seqlen_traits, Is_split>;
 
     using MainloopPipeline = typename Ktraits::MainloopPipeline;
     using MainloopPipelineVt = typename Ktraits::MainloopPipelineNoTMA;

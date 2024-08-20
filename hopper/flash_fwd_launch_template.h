@@ -27,7 +27,7 @@ void run_flash_fwd(Flash_fwd_params &params, cudaStream_t stream) {
 
     // print(typename Kernel_traits::SmemLayoutVt{}); printf("\n"); print(typename Kernel_traits::SmemLayoutVt_tmp{});
     using CollectiveMainloop = flash::CollectiveMainloopFwd<Kernel_traits, Is_causal, Seqlen_traits, Is_split>;
-    using CollectiveEpilogue = flash::CollectiveEpilogueFwd<Kernel_traits, Seqlen_traits>;
+    using CollectiveEpilogue = flash::CollectiveEpilogueFwd<Kernel_traits, Seqlen_traits, Is_split>;
     using Scheduler = std::conditional_t<
         Seqlen_traits::kUseVarSeqLen,
         flash::SingleTileScheduler,
@@ -64,7 +64,7 @@ void run_flash_fwd(Flash_fwd_params &params, cudaStream_t stream) {
         });
     typename CollectiveEpilogue::Params epilogue_params =
         CollectiveEpilogue::to_underlying_arguments({
-            static_cast<OutputType*>(params.o_ptr),
+            Is_split ? static_cast<OutputType*>(params.oaccum_ptr) : static_cast<OutputType*>(params.o_ptr),
             seqlen_traits_q.get_gmem_layout(
                 params.seqlen_q, params.d, params.h, params.b,
                 params.o_row_stride, params.o_head_stride, params.o_batch_stride
@@ -120,7 +120,7 @@ void run_mha_fwd_hdim64(Flash_fwd_params &params, cudaStream_t stream) {
         SEQLEN_SWITCH(params.cu_seqlens_q, Seqlen_traits, [&] {
                 BOOL_SWITCH(params.num_splits > 1, Is_split, [&] {
             run_flash_fwd<
-                Flash_fwd_kernel_traits<Headdim, 192, 128, 16, 2, false, 1, T>, 
+                Flash_fwd_kernel_traits<Headdim, 192, 128, 16, 2, false, 1, T, Is_split>, 
                 Is_causal, Seqlen_traits, Is_split
             >(params, stream);
         });
@@ -137,7 +137,7 @@ void run_mha_fwd_hdim128(Flash_fwd_params &params, cudaStream_t stream) {
             BOOL_SWITCH(cutlass::ceil_div(params.seqlen_q, 128) % 2 == 0 && !Is_causal && !Seqlen_traits::kUseVarSeqLen, UseCluster, [&] {
                 BOOL_SWITCH(params.num_splits > 1, Is_split, [&] {
                 run_flash_fwd<
-                    Flash_fwd_kernel_traits<Headdim, 128, Is_causal ? 128 : 176, 12, 2, false, UseCluster ? 2 : 1, T>, 
+                    Flash_fwd_kernel_traits<Headdim, 128, Is_causal ? 128 : 176, 12, 2, false, UseCluster ? 2 : 1, T, Is_split>, 
                     Is_causal, Seqlen_traits, Is_split
                 >(params, stream);
             });
