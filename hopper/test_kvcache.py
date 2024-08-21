@@ -4,6 +4,14 @@ import flash_attn_interface as fa3
 import flash_attn as fa2
 import torch.utils.benchmark as benchmark
 
+import argparse
+
+parser = argparse.ArgumentParser(description='Process some integers.')
+parser.add_argument('--causal', action='store_true')
+parser.add_argument('--splits', type=int)
+
+args = parser.parse_args()
+
 def benchmark_fa_kv(fn, repeats=10, desc='', verbose=True, **kwinputs):
     """Use Pytorch Benchmark on the forward pass of an arbitrary function."""
     if verbose:
@@ -49,6 +57,8 @@ def main():
     assert num_queries <= max_queries_per_batch
     assert all(s < cache_seqlen for s in context_seqlens)
 
+    torch.manual_seed(5434)
+
     # Allocate some tensors
     k_cache = torch.randn(
         (num_caches, cache_seqlen, nheads_kv, headdim), device="cuda", dtype=dtype
@@ -85,8 +95,8 @@ def main():
         v_cache=v_cache,
         cache_seqlens=cache_seqlen_large,
         cache_batch_idx=cache_idx_large,
-        causal=True,
-        num_splits=1
+        causal=bool(args.causal),
+        num_splits=args.splits
     )
 
     # Second for n-1 small queries
@@ -96,8 +106,8 @@ def main():
         v_cache=v_cache,
         cache_seqlens=cache_seqlens_small,
         cache_batch_idx=cache_idxs_small,
-        causal=True,
-        num_splits=2
+        causal=bool(args.causal),
+        num_splits=args.splits
     )
 
       # Call flash attn
@@ -108,8 +118,11 @@ def main():
         v_cache=v_cache,
         cache_seqlens=cache_seqlen_large,
         cache_batch_idx=cache_idx_large,
-        causal=True,
+        causal=bool(args.causal),
+        num_splits=args.splits
     )
+    print ((out0 - out2).abs().max().item())
+
 
     # Second for n-1 small queries
     out3 = fa2.flash_attn_with_kvcache(
@@ -118,13 +131,13 @@ def main():
         v_cache=v_cache,
         cache_seqlens=cache_seqlens_small,
         cache_batch_idx=cache_idxs_small,
-        causal=True,
+        causal=bool(args.causal),
+        num_splits=args.splits
     )
 
-    print ((out0 - out2).abs().max().item())
     print ((out1 - out3).abs().max().item())
-    print ((out0 - out2).abs().max().item());
-    print ((out1 - out3).abs().max().item());
+
+    return
 
     benchmark_fa_kv(fa3.flash_attn_with_kvcache, repeats=10, desc='', verbose=True,  
         q=q_buf_large,

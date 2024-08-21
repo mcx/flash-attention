@@ -30,14 +30,14 @@ void run_flash_fwd(Flash_fwd_params &params, cudaStream_t stream) {
     // print(typename Kernel_traits::SmemLayoutVt{}); printf("\n"); print(typename Kernel_traits::SmemLayoutVt_tmp{});
     using CollectiveMainloop = flash::CollectiveMainloopFwd<Kernel_traits, Is_causal, Seqlen_traits, Is_split>;
     using CollectiveEpilogue = flash::CollectiveEpilogueFwd<Kernel_traits, Seqlen_traits, Is_split>;
-    using Scheduler = std::conditional_t<
+    /* using Scheduler = std::conditional_t<
         Seqlen_traits::kUseVarSeqLen,
         flash::SingleTileScheduler,
         std::conditional_t<!Is_causal,
             flash::StaticPersistentTileScheduler,
             flash::DynamicPersistentTileScheduler<Kernel_traits::kNThreads - cutlass::NumThreadsPerWarpGroup, Kernel_traits::NumProducerThreads>
-    >>;
-    //using Scheduler = flash::SingleTileScheduler;
+    >>; */
+    using Scheduler = flash::SingleTileScheduler;
     Seqlen_traits seqlen_traits_q(
         params.total_q, params.seqlen_q, params.cu_seqlens_q);
     Seqlen_traits seqlen_traits_k(

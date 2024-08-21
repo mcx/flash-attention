@@ -202,7 +202,7 @@ struct CollectiveMainloopFwd {
         return {args.layout_Q, args.layout_K, args.layout_V,
                 cutlass::FastDivmod(cute::ceil_div(get<2>(args.layout_Q.shape()), get<2>(args.layout_K.shape()))),
                 tma_load_Q, tma_load_K, tma_load_V,
-                args.softmax_scale_log2, args.cache_batch_idx};
+                args.softmax_scale_log2, args.cache_batch_idx, args.h, args.num_splits};
     }
 
     /// Issue Tma Descriptor Prefetch -- ideally from a single thread for best performance
@@ -218,7 +218,7 @@ struct CollectiveMainloopFwd {
           Params const& mainloop_params, int m_block,
           const Seqlen_traits& seqlen_traits_q,
           const Seqlen_traits& seqlen_traits_k,
-	  int n_split_idx,
+	        const int n_split_idx,
           int & n_block_min,
           int & n_block_max
         ) {
