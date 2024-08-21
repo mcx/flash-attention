@@ -137,7 +137,7 @@ def main():
 
     print ((out1 - out3).abs().max().item())
 
-    return
+    #return
 
     benchmark_fa_kv(fa3.flash_attn_with_kvcache, repeats=10, desc='', verbose=True,  
         q=q_buf_large,
@@ -145,8 +145,9 @@ def main():
         v_cache=v_cache,
         cache_seqlens=cache_seqlen_large,
         cache_batch_idx=cache_idx_large,
-        causal=True,
-        num_splits=2)
+        causal=bool(args.causal),
+        num_splits=args.splits
+    )
 
     benchmark_fa_kv(fa3.flash_attn_with_kvcache, repeats=10, desc='', verbose=True,  
         q=q_buf_small,
@@ -154,30 +155,33 @@ def main():
         v_cache=v_cache,
         cache_seqlens=cache_seqlens_small,
         cache_batch_idx=cache_idxs_small,
-        causal=True,
-        num_splits=2)
+        causal=bool(args.causal),
+        num_splits=args.splits
+    )
 
     print ('fa2 ')
 
-    for k in [1, 2, 4, 8, 16, 32]:
+    for k in [1]:
         benchmark_fa_kv(fa2.flash_attn_with_kvcache, repeats=10, desc='', verbose=True,
             q=q_buf_large,
             k_cache=k_cache,
             v_cache=v_cache,
             cache_seqlens=cache_seqlen_large,
             cache_batch_idx=cache_idx_large,
-            causal=True,
-            num_splits=k)
+        causal=bool(args.causal),
+        num_splits=args.splits
+    )
 
-    for k in [1, 2, 4, 8, 16, 32]:
+    for k in [1]:
         benchmark_fa_kv(fa2.flash_attn_with_kvcache, repeats=10, desc='', verbose=True,
             q=q_buf_small,
             k_cache=k_cache,
             v_cache=v_cache,
             cache_seqlens=cache_seqlens_small,
             cache_batch_idx=cache_idxs_small,
-            causal=True,
-            num_splits=k)
+        causal=bool(args.causal),
+        num_splits=args.splits
+    )
 
 if __name__ == "__main__":
     main()
