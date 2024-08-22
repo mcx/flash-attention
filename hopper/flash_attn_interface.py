@@ -14,7 +14,7 @@ import flashattn_hopper_cuda
 def maybe_contiguous(x):
     return x.contiguous() if x is not None and x.stride(-1) != 1 else x
 
-def _flash_attn_forward(q, k, v, softmax_scale, causal, descale_q = None, descale_k = None, descale_v = None):
+def _flash_attn_forward(q, k, v, softmax_scale, causal, descale_q = None, descale_k = None, descale_v = None, gqa_decoding=False):
     q, k, v = [maybe_contiguous(x) for x in (q, k, v)]
     out, q, k, v, out_padded, softmax_lse, S_dmask = flashattn_hopper_cuda.fwd(
         q,
@@ -26,6 +26,7 @@ def _flash_attn_forward(q, k, v, softmax_scale, causal, descale_q = None, descal
         descale_k,
         descale_v,
         causal,
+        gqa_decoding
     )
     return out, q, k, v, out_padded, softmax_lse, S_dmask
 
@@ -174,7 +175,8 @@ class FlashAttnFunc(torch.autograd.Function):
             causal,
             descale_q=descale_q,
             descale_k=descale_k,
-            descale_v=descale_v,
+            descale_v=descale_v,     
+            gqa_decoding=False,
         )
         ctx.save_for_backward(q, k, v, out_padded, softmax_lse)
         ctx.softmax_scale = softmax_scale
@@ -350,7 +352,7 @@ def flash_attn_func(
         deterministic,
         descale_q,
         descale_k,
-        descale_v,
+        descale_v,     
     )
 
 

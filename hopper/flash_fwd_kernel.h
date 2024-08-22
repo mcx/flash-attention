@@ -169,9 +169,11 @@ __global__ void __launch_bounds__(Ktraits::kNWarps * cutlass::NumThreadsPerWarp,
             }
             int n_block_max = collective_mainloop.get_n_block_max(
                 mainloop_params, m_block, seqlen_traits_q, seqlen_traits_k);
-            if ((Is_causal || seqlen_traits_k.UseVarSeqLen) && n_block_max <= 0) {  // We exit early and write 0 to gO and -inf to gLSE.
-                collective_epilogue.store_zero(epilogue_params, shared_storage, threadIdx.x - NumCopyThreads, block_coord, seqlen_traits_q);
-                continue;
+            if constexpr(!Seqlen_traits_Q::DecodingGQA) {
+                if ((Is_causal || seqlen_traits_k.UseVarSeqLen) && n_block_max <= 0) {  // We exit early and write 0 to gO and -inf to gLSE.
+                    collective_epilogue.store_zero(epilogue_params, shared_storage, threadIdx.x - NumCopyThreads, block_coord, seqlen_traits_q);
+                    continue;
+                }
             }
 
             collective_mainloop.mma(mainloop_params, pipeline_k, pipeline_v, smem_pipe_read_k, smem_pipe_read_v,
@@ -179,7 +181,7 @@ __global__ void __launch_bounds__(Ktraits::kNWarps * cutlass::NumThreadsPerWarp,
                                     seqlen_traits_q, seqlen_traits_k);
                                     // tOrO, softmax, n_block_max, threadIdx.x - NumCopyThreads + (work_idx >> 30), work_idx, shared_storage);
             collective_epilogue.store(epilogue_params, tOrO, softmax.row_sum, shared_storage, tiled_mma1,
-                                      threadIdx.x - NumCopyThreads, block_coord, seqlen_traits_q);
+                                      threadIdx.x - NumCopyThreads, block_coord, seqlen_traits_q, mainloop_params.qhead_per_khead_divmod);
 
             ++work_idx;
         }
