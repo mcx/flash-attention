@@ -44,6 +44,7 @@ __global__ void __launch_bounds__(Ktraits::kNWarps * cutlass::NumThreadsPerWarp,
     static constexpr int NumMmaThreads = size(typename Ktraits::TiledMma0{});
     static constexpr int NumCopyThreads = !Is_WS ? 0 : cutlass::NumThreadsPerWarpGroup;
     static constexpr int kBlockM = Ktraits::kBlockM;
+    static constexpr int kBlockH = Ktraits::kBlockH;
     // static constexpr int kBlockN = Ktraits::kBlockN;
     // constexpr int kHeadDim = Ktraits::kHeadDim;
 
@@ -117,10 +118,12 @@ __global__ void __launch_bounds__(Ktraits::kNWarps * cutlass::NumThreadsPerWarp,
                 auto [m_block, bidh, bidb] = block_coord;
 
                 seqlen_traits_q.init(bidb);
-                seqlen_traits_k.init(bidb);
-                if (m_block * kBlockM >= seqlen_traits_q.actual_seq_len) {
-                    continue;
-                }
+                seqlen_traits_k.init(bidb);                
+                if constexpr(Seqlen_traits_Q::UseVarSeqLen) {
+                    if (m_block * kBlockM >= seqlen_traits_q.actual_seq_len) {
+                        continue;
+                    }
+                } 
                 int n_block_max = collective_mainloop.get_n_block_max(
                     mainloop_params, m_block, seqlen_traits_q, seqlen_traits_k);
                 if ((Is_causal || seqlen_traits_k.UseVarSeqLen) && n_block_max <= 0) {
@@ -164,8 +167,10 @@ __global__ void __launch_bounds__(Ktraits::kNWarps * cutlass::NumThreadsPerWarp,
 
             seqlen_traits_q.init(bidb);
             seqlen_traits_k.init(bidb);
-            if (m_block * kBlockM >= seqlen_traits_q.actual_seq_len) {
-                continue;
+            if constexpr(Seqlen_traits_Q::UseVarSeqLen) {
+                if (m_block * kBlockM >= seqlen_traits_q.actual_seq_len) {
+                    continue;
+                }
             }
             int n_block_max = collective_mainloop.get_n_block_max(
                 mainloop_params, m_block, seqlen_traits_q, seqlen_traits_k);
