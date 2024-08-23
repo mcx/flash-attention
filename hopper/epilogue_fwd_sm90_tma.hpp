@@ -128,7 +128,7 @@ struct CollectiveEpilogueFwd {
             SmemLayoutO{},
             select<0, 2>(TileShape_MNK{}),
             _1{}); // no mcast for O
-        Tensor mOAccum = make_tensor(make_gmem_ptr(args.ptr_O_accum), args.layout_O_accum);
+        Tensor mOAccum = make_tensor(make_gmem_ptr(args.ptr_O_accum ? args.ptr_O_accum : args.ptr_O), args.layout_O_accum);
         TMA_O_ACCUM tma_store_O_accum = make_tma_copy(
             GmemTiledCopyOTMA{},
             mOAccum,
@@ -328,6 +328,45 @@ struct CollectiveEpilogueFwd {
         Tensor mLSE = make_tensor(make_gmem_ptr(epilogue_params.ptr_LSE), epilogue_params.layout_LSE);
         Tensor gLSE = seqlen_traits_q.get_lse_local_tile_tensor(
             mLSE, Shape<Int<kBlockM>>{}, bidh, bidb)(_, m_block);
+
+        TiledCopyO gmem_tiled_copy_O;
+        auto gmem_thr_copy_O = gmem_tiled_copy_O.get_thread_slice(thread_idx);
+        Tensor tOgO = gmem_thr_copy_O.partition_D(gO);
+        Tensor tOrO = make_fragment_like(tOgO);
+        clear(tOrO);
+        // Construct identity layout for sO
+        Tensor cO = cute::make_identity_tensor(select<0, 2>(TileShape_MNK{}));  // (BLK_M,BLK_K) -> (blk_m,blk_k)
+        // Repeat the partitioning with identity layouts
+        Tensor tOcO = gmem_thr_copy_O.partition_D(cO);
+        Tensor tOpO = make_tensor<bool>(make_shape(size<2>(tOgO)));
+        #pragma unroll
+        for (int k = 0; k < size(tOpO); ++k) { tOpO(k) = get<1>(tOcO(_0{}, _0{}, k)) < get<1>(epilogue_params.layout_O.shape()); }
+        // Clear_OOB_K must be false since we don't want to write zeros to gmem
+        flash::copy</*Is_even_MN=*/false, /*Is_even_K=*/false, /*Clear_OOB_MN=*/false, /*Clear_OOB_K=*/false>(
+            gmem_tiled_copy_O, tOrO, tOgO, tOcO, tOpO, seqlen_traits_q.actual_seq_len - m_block * kBlockM
+        );
+        static_assert(kBlockM <= NumMmaThreads);
+        if (thread_idx < seqlen_traits_q.actual_seq_len - m_block * kBlockM) { gLSE(thread_idx) = -INFINITY; }
+    }
+
+    // Write 0 to output and -inf to LSE
+    template<typename SharedStorage>
+    CUTLASS_DEVICE void
+    store_zero_split(
+          Params const& epilogue_params,
+          SharedStorage& shared_storage,
+          int thread_idx,
+          cute::tuple<int32_t, int32_t, int32_t, int32_t> const& block_coord,
+          const Seqlen_traits& seqlen_traits_q
+          ) {
+        auto [m_block, bidh, bidb, n_split_idx] = block_coord;
+        Tensor mO = make_tensor(make_gmem_ptr(epilogue_params.ptr_O_accum), epilogue_params.layout_O_accum);
+        Tensor gO = seqlen_traits_q.get_oaccum_local_tile_tensor(
+            mO, select<0, 2>(TileShape_MNK{}), bidh, bidb, n_split_idx
+        )(_, _, m_block);  // (M, K)
+        Tensor mLSE = make_tensor(make_gmem_ptr(epilogue_params.ptr_LSE_accum), epilogue_params.layout_LSE_accum);
+        Tensor gLSE = seqlen_traits_q.get_lseaccum_local_tile_tensor(
+            mLSE, Shape<Int<kBlockM>>{}, bidh, bidb, n_split_idx)(_, m_block);
 
         TiledCopyO gmem_tiled_copy_O;
         auto gmem_thr_copy_O = gmem_tiled_copy_O.get_thread_slice(thread_idx);
