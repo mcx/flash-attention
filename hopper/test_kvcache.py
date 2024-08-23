@@ -8,7 +8,7 @@ import argparse
 
 parser = argparse.ArgumentParser(description='Process some integers.')
 parser.add_argument('--causal', action='store_true')
-parser.add_argument('--splits', type=int)
+parser.add_argument('--splits', type=int, default=1)
 
 args = parser.parse_args()
 

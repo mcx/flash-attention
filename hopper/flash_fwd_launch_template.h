@@ -66,15 +66,25 @@ void run_flash_fwd(Flash_fwd_params &params, cudaStream_t stream) {
         });
     typename CollectiveEpilogue::Params epilogue_params =
         CollectiveEpilogue::to_underlying_arguments({
-            Is_split ? static_cast<OutputType*>(params.oaccum_ptr) : static_cast<OutputType*>(params.o_ptr),
+            static_cast<OutputType*>(params.o_ptr),
+            static_cast<OutputType*>(params.oaccum_ptr),
             seqlen_traits_q.get_gmem_layout(
                 params.seqlen_q, params.d, params.h, params.b,
                 params.o_row_stride, params.o_head_stride, params.o_batch_stride
             ),  // layout_O
+	    seqlen_traits_q.get_oaccum_gmem_layout(
+                params.seqlen_q, params.d, params.h, params.b, params.num_splits,
+                params.o_row_stride, params.o_head_stride, params.o_batch_stride,  
+		(params.o_batch_stride * params.b)
+            ), //layout_O_accum
             static_cast<float*>(params.softmax_lse_ptr),
+            static_cast<float*>(params.softmax_lseaccum_ptr),
             seqlen_traits_q.get_lse_gmem_layout(
                 params.seqlen_q, params.h, params.b
-            )  // layout_LSE
+            ),  // layout_LSE
+            seqlen_traits_q.get_lseaccum_gmem_layout(
+                params.seqlen_q, params.h, params.b, params.num_splits
+            ) // layout_LSE_accum
         });
 
     int num_blocks_m = cutlass::ceil_div(params.seqlen_q, Kernel_traits::kBlockM);
@@ -115,6 +125,7 @@ void run_flash_fwd(Flash_fwd_params &params, cudaStream_t stream) {
     CHECK_CUDA_KERNEL_LAUNCH();
 
 
+#if 0
     if (Is_split) { 
 	    auto numOElem = size(epilogue_params.layout_O);
 	    thrust::device_ptr<float> devOAccPtr =
@@ -122,6 +133,8 @@ void run_flash_fwd(Flash_fwd_params &params, cudaStream_t stream) {
 	    thrust::transform(devOAccPtr, devOAccPtr + numOElem, static_cast<Element*>(params.o_ptr),
 		    flash::TypeConvert<Element>());
     }
+#endif
+
 }
 
 template<typename T>

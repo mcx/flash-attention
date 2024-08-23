@@ -218,19 +218,19 @@ struct CollectiveMainloopFwd {
           Params const& mainloop_params, int m_block,
           const Seqlen_traits& seqlen_traits_q,
           const Seqlen_traits& seqlen_traits_k,
-	        const int n_split_idx,
+	  const int n_split_idx,
           int & n_block_min,
           int & n_block_max
         ) {
         static constexpr int kBlockM = get<0>(TileShape_MNK{});
         static constexpr int kBlockN = get<1>(TileShape_MNK{});        
         // int const seqlen_q = Seqlen_traits::kUseVarSeqLen ? seqlen_traits_q.actual_seq_len : shape<0>(mainloop_params.layout_Q);
-        int const full_seqlen_k = shape<0>(mainloop_params.layout_K);
+        //int const full_seqlen_k = shape<0>(mainloop_params.layout_K);
         int const seqlen_q = seqlen_traits_q.actual_seq_len;
         int const seqlen_k = seqlen_traits_k.actual_seq_len;
 
         const int num_n_splits = Is_split ? mainloop_params.num_splits : 1;
-        const int n_blocks_per_split = ((full_seqlen_k + kBlockN - 1) / kBlockN + num_n_splits - 1) / num_n_splits;
+        const int n_blocks_per_split = ((seqlen_k + kBlockN - 1) / kBlockN + num_n_splits - 1) / num_n_splits;
         n_block_min = n_split_idx * n_blocks_per_split;
         n_block_max = std::min(cute::ceil_div(seqlen_k, kBlockN), (n_split_idx + 1) * n_blocks_per_split);
         if (Is_causal) {

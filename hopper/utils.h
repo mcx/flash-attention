@@ -348,6 +348,98 @@ __forceinline__ __device__ void write_O(
     }
 }
 
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <int NumCopyThreads, typename ElemO, typename TMACopyO, typename LayoutO,
+          typename TileShapeO, typename SMemO, typename SeqLenTraits>
+__forceinline__ __device__ void write_tma_split(
+        ElemO* O, const TMACopyO& tma_store_O,
+        const LayoutO& layout_O, const TileShapeO& tile_shape_O,
+        const SMemO& sO, int m_block, int bidh, int bidb, int split_idx,
+        const SeqLenTraits& seqlen_traits_o, int write_warp_idx) {
+    Tensor mO = tma_store_O.get_tma_tensor(layout_O.shape());
+    Tensor gO = seqlen_traits_o.get_oaccum_local_tile_tensor(
+        mO, tile_shape_O, bidh, bidb, split_idx
+    )(_, _, m_block);  // (M, K)
+    auto block_tma_O = tma_store_O.get_slice(_0{});
+    Tensor tOgO = block_tma_O.partition_D(gO);  // (TMA, TMA_M, TMA_K)
+    Tensor tOsO = block_tma_O.partition_S(sO);  // (TMA, TMA_M, TMA_K)
+
+    int const lane_predicate = cute::elect_one_sync();
+    int const warp_idx = cutlass::canonical_warp_idx_sync();
+    if (warp_idx == write_warp_idx && lane_predicate) {
+        cute::copy(tma_store_O, tOsO, tOgO);
+        tma_store_arrive();
+    }
+    // Note: no wait here.
+    // tma_store_wait<0>();
+}
+
+template <int NumCopyThreads, typename ElemO, typename TiledCopyO, typename LayoutO,
+          typename TileShapeO, typename SMemO, typename SeqLenTraits>
+__forceinline__ __device__ void write_tiled_split(
+        ElemO* O, const TiledCopyO& tiled_copy_O,
+        const LayoutO& layout_O, const TileShapeO& tile_shape_O,
+        const SMemO& sO, int m_block, int bidh, int bidb, int split_idx,
+        const SeqLenTraits& seqlen_traits_o) {
+    Tensor mO = make_tensor(make_gmem_ptr(O), layout_O);
+    Tensor gO = seqlen_traits_o.get_oaccum_local_tile_tensor(
+        mO, tile_shape_O, bidh, bidb, split_idx
+    )(_, _, m_block);  // (M, K)
+
+    ThrCopy thr_copy_O = tiled_copy_O.get_slice(threadIdx.x - NumCopyThreads);
+    Tensor tOgO = thr_copy_O.partition_D(gO); // (CPY,CPY_M,CPY_K,k)
+    Tensor tOsO = thr_copy_O.partition_S(sO); // (CPY,CPY_M,CPY_K)
+
+    // Prepare for TiledCopy.
+    // Grouping is needed because cute::copy_if() does group_modes<1, R> for src and dst.
+    // After grouping, the first dim is number of elements to read together.
+    Tensor tOsOFlatten = cute::flatten(tOsO);
+    Tensor tOsOGroup = cute::group_modes<1, rank(tOsOFlatten)>(tOsOFlatten);
+    Tensor tOgOFlatten = cute::flatten(tOgO);
+    Tensor tOgOGroup = cute::group_modes<1, rank(tOgOFlatten)>(tOgOFlatten);
+
+    // Get thread coords to global index mapping.
+    Tensor gOCounting = cute::make_identity_tensor(gO.shape());
+    Tensor tSgOCounting = thr_copy_O.partition_D(gOCounting);
+    Tensor tSgOCountingFlatten = cute::flatten(tSgOCounting);
+    Tensor tSgOCountingGrouped =
+        cute::group_modes<1, rank(tSgOCountingFlatten)>(tSgOCountingFlatten);
+
+    // Write out to GMEM.
+    const int kNumMsPerTile = get<0>(tile_shape_O);
+    int cta_m = std::min(
+        seqlen_traits_o.actual_seq_len - m_block * kNumMsPerTile, kNumMsPerTile
+    );
+    if (cta_m == kNumMsPerTile) {
+        copy(tiled_copy_O, tOsOGroup, tOgOGroup);
+    } else {
+        auto predicate_fn = [&](auto coords) {
+            auto s_coords = tSgOCountingGrouped(_0{}, coords);
+            return elem_less(get<0>(s_coords), cta_m);
+        };
+        copy_if(tiled_copy_O, predicate_fn, tOsOGroup, tOgOGroup);
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <bool IsTMACopy, int NumCopyThreads, typename ElemO,
+          typename TMACopyO, typename TiledCopyO, typename LayoutO,
+          typename TileShapeO, typename SMemO, typename SeqLenTraits>
+__forceinline__ __device__ void write_O_split(
+        ElemO* O, const TMACopyO& tma_copy_O, const TiledCopyO& tiled_copy_O,
+        const LayoutO& layout_O, const TileShapeO& tile_shape_O,
+        const SMemO& sO, int m_block, int bidh, int bidb, int split_idx,
+        const SeqLenTraits& seqlen_traits_o, int write_warp_idx) {
+    if constexpr (IsTMACopy) {
+        write_tma_split<NumCopyThreads>(O, tma_copy_O, layout_O, tile_shape_O, sO, m_block, bidh, bidb, split_idx, seqlen_traits_o, write_warp_idx);
+    } else {
+        write_tiled_split<NumCopyThreads>(O, tiled_copy_O, layout_O, tile_shape_O, sO, m_block, bidh, bidb, split_idx, seqlen_traits_o);
+    }
+}
+
+
 template <bool Split=false>
 __forceinline__ __device__  cute::tuple<int32_t, int32_t, int32_t, int32_t> getTensorCoord(const cute::tuple<int32_t, int32_t, int32_t> & coord, const int & h)
 {

@@ -40,7 +40,8 @@ struct CollectiveEpilogueFwd {
     using SmemCopyAtomO = std::conditional_t<Is_split, Copy_Atom<DefaultCopy, Element>, Copy_Atom<cute::SM90_U32x4_STSM_N, Element>>;
     using SharedStorage = cute::array_aligned<Element, cute::cosize_v<SmemLayoutO>>;
 
-    using GmemTiledCopyOTMA = std::conditional_t<Is_split, cute::SM90_TMA_REDUCE_ADD, cute::SM90_TMA_STORE>;
+    //using GmemTiledCopyOTMA = std::conditional_t<Is_split, cute::SM90_TMA_REDUCE_ADD, cute::SM90_TMA_STORE>;
+    using GmemTiledCopyOTMA = cute::SM90_TMA_STORE;
     using TMA_O = decltype(make_tma_copy(
         GmemTiledCopyOTMA{},
         make_tensor(
@@ -51,6 +52,17 @@ struct CollectiveEpilogueFwd {
         SmemLayoutO{},
         select<0, 2>(TileShape_MNK{}),
         _1{}));  // no mcast for O
+
+     using TMA_O_ACCUM = decltype(make_tma_copy(
+        GmemTiledCopyOTMA{},
+        make_tensor(
+            make_gmem_ptr(static_cast<Element*>(nullptr)),
+            typename Seqlen_traits::ShapeOAccumT{},
+            typename Seqlen_traits::StrideOAccumT{}
+        ),
+        SmemLayoutO{},
+        select<0, 2>(TileShape_MNK{}),
+        _1{}));  // no mcast for OAccum
 
     // These are for storing the output tensor without TMA (e.g., for setting output to zero and var-seq-len)
     static constexpr int kNumVecElem = ceil_div(128, sizeof_bits_v<Element>);
@@ -84,18 +96,27 @@ struct CollectiveEpilogueFwd {
     // Host side kernel arguments
     struct Arguments {
         Element* ptr_O;
+        Element* ptr_O_accum;
         typename Seqlen_traits::LayoutT const layout_O;
+        typename Seqlen_traits::LayoutOAccumT const layout_O_accum;
         float* ptr_LSE;
+        float* ptr_LSE_accum;
         typename Seqlen_traits::LayoutLseT const layout_LSE;
+        typename Seqlen_traits::LayoutLseAccumT const layout_LSE_accum;
     };
 
     // Device side kernel params
     struct Params {
         Element* ptr_O;
+        Element* ptr_O_accum;
         typename Seqlen_traits::LayoutT const layout_O;
+        typename Seqlen_traits::LayoutOAccumT const layout_O_accum;
         float* ptr_LSE;
+        float* ptr_LSE_accum;
         typename Seqlen_traits::LayoutLseT const layout_LSE;
+        typename Seqlen_traits::LayoutLseAccumT const layout_LSE_accum;
         TMA_O tma_store_O;
+        TMA_O_ACCUM tma_store_O_accum;
     };
 
     static Params
@@ -107,7 +128,14 @@ struct CollectiveEpilogueFwd {
             SmemLayoutO{},
             select<0, 2>(TileShape_MNK{}),
             _1{}); // no mcast for O
-        return {args.ptr_O, args.layout_O, args.ptr_LSE, args.layout_LSE, tma_store_O};
+        Tensor mOAccum = make_tensor(make_gmem_ptr(args.ptr_O_accum), args.layout_O_accum);
+        TMA_O_ACCUM tma_store_O_accum = make_tma_copy(
+            GmemTiledCopyOTMA{},
+            mOAccum,
+            SmemLayoutO{},
+            select<0, 2>(TileShape_MNK{}),
+            _1{});  // no mcast for O
+        return {args.ptr_O, args.ptr_O_accum, args.layout_O, args.layout_O_accum, args.ptr_LSE, args.ptr_LSE_accum, args.layout_LSE, args.layout_LSE_accum, tma_store_O, tma_store_O_accum };
     }
 
     /// Issue Tma Descriptor Prefetch -- ideally from a single thread for best performance
@@ -146,9 +174,10 @@ struct CollectiveEpilogueFwd {
         cutlass::arch::NamedBarrier::arrive(NumMmaThreads + cutlass::NumThreadsPerWarp,
                                             cutlass::arch::ReservedNamedBarriers::EpilogueBarrier);
 
-        Tensor mLSE = make_tensor(make_gmem_ptr(epilogue_params.ptr_LSE), epilogue_params.layout_LSE);
-        Tensor gLSE = seqlen_traits_q.get_lse_local_tile_tensor(
-            mLSE, Shape<Int<kBlockM>>{}, bidh, bidb)(_, m_block);
+	if (Is_split) {
+        Tensor mLSE =  make_tensor(make_gmem_ptr(epilogue_params.ptr_LSE_accum), epilogue_params.layout_LSE_accum);
+        Tensor gLSE = seqlen_traits_q.get_lseaccum_local_tile_tensor(
+		       mLSE, Shape<Int<kBlockM>>{}, bidh, bidb, n_split_idx)(_, m_block) ;
         Tensor caccO = cute::make_identity_tensor(select<0, 2>(TileShape_MNK{}));
         auto thread_mma = tiled_mma.get_thread_slice(thread_idx);
         Tensor taccOcO = thread_mma.partition_C(caccO);                           // (MMA,MMA_M,MMA_K)
@@ -165,6 +194,27 @@ struct CollectiveEpilogueFwd {
             }
         }
 
+        } else {
+        Tensor mLSE =  make_tensor(make_gmem_ptr(epilogue_params.ptr_LSE), epilogue_params.layout_LSE);
+        Tensor gLSE = seqlen_traits_q.get_lse_local_tile_tensor(
+            mLSE, Shape<Int<kBlockM>>{}, bidh, bidb)(_, m_block);
+        Tensor caccO = cute::make_identity_tensor(select<0, 2>(TileShape_MNK{}));
+        auto thread_mma = tiled_mma.get_thread_slice(thread_idx);
+        Tensor taccOcO = thread_mma.partition_C(caccO);                           // (MMA,MMA_M,MMA_K)
+        static_assert(decltype(size<0, 0>(taccOcO))::value == 2);
+        static_assert(decltype(size<0, 1>(taccOcO))::value == 2);
+        // taccOcO has shape ((2, 2, V), MMA_M, MMA_K), we only take only the row indices.
+        Tensor taccOcO_row = taccOcO(make_coord(_0{}, _, _0{}), _, _0{});
+        CUTE_STATIC_ASSERT_V(size(lse) == size(taccOcO_row));                     // MMA_M
+        if (get<1>(taccOcO_row(_0{})) == 0) {
+            #pragma unroll
+            for (int mi = 0; mi < size(lse); ++mi) {
+                const int row = get<0>(taccOcO_row(mi));
+                if (row < seqlen_traits_q.actual_seq_len - m_block * kBlockM) { gLSE(row) = lse(mi); }
+            }
+        }
+	}
+
         int write_warp_idx = kNWarps - 1;
         if (cutlass::canonical_warp_idx_sync() == write_warp_idx) {
             cutlass::arch::NamedBarrier::sync(
@@ -173,11 +223,19 @@ struct CollectiveEpilogueFwd {
             );
         }
         TiledCopyO gmem_tiled_copy_O;
+	if (Is_split) {
+        flash::write_O_split<!Seqlen_traits::kUseVarSeqLen, NumCopyThreads>(
+            epilogue_params.ptr_O_accum, epilogue_params.tma_store_O_accum, gmem_tiled_copy_O, 
+            epilogue_params.layout_O_accum, select<0, 2>(TileShape_MNK{}), sO, 
+            m_block, bidh, bidb, n_split_idx, seqlen_traits_q, write_warp_idx
+        );
+	} else {
         flash::write_O<!Seqlen_traits::kUseVarSeqLen, NumCopyThreads>(
             epilogue_params.ptr_O, epilogue_params.tma_store_O, gmem_tiled_copy_O, 
             epilogue_params.layout_O, select<0, 2>(TileShape_MNK{}), sO, 
             m_block, bidh, bidb, seqlen_traits_q, write_warp_idx
         );
+	}
     }
 
     template <typename SharedStorage, typename FrgTensorO, typename FrgTensorLSE, typename TiledMma>
