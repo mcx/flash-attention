@@ -19,6 +19,7 @@
 #include "seq_len.h"
 #include "utils.h"
 
+#include "combine.h"
 
 template<typename Kernel_traits, bool Is_causal, typename Seqlen_traits, bool Is_split=false>
 void run_flash_fwd(Flash_fwd_params &params, cudaStream_t stream) {
@@ -124,6 +125,30 @@ void run_flash_fwd(Flash_fwd_params &params, cudaStream_t stream) {
         scheduler_params, seqlen_traits_q, seqlen_traits_k);
     CHECK_CUDA_KERNEL_LAUNCH();
 
+
+   if (params.num_splits > 1) {
+        // We want kBlockM to be as small as possible for more parallelism.
+        // With 128 threads we can load 512 elements at a time, so if headdim is divisible by 128, kBlockM = 4.
+        // If headdim is divisible by 64, then we set kBlockM = 8, etc.
+        constexpr static int kBlockM = Kernel_traits::kHeadDim % 128 == 0 ? 4 : (Kernel_traits::kHeadDim % 64 == 0 ? 8 : 16);
+        dim3 grid_combine((params.b * params.h * params.seqlen_q + kBlockM - 1) / kBlockM);
+            if (params.num_splits <= 2) {
+                flash::combine_attn_seqk_parallel<Kernel_traits, kBlockM, 1, true><<<grid_combine, 128, 0, stream>>>(params);
+            } else if (params.num_splits <= 4) {
+                flash::combine_attn_seqk_parallel<Kernel_traits, kBlockM, 2, true><<<grid_combine, 128, 0, stream>>>(params);
+            } else if (params.num_splits <= 8) {
+                flash::combine_attn_seqk_parallel<Kernel_traits, kBlockM, 3, true><<<grid_combine, 128, 0, stream>>>(params);
+            } else if (params.num_splits <= 16) {
+                flash::combine_attn_seqk_parallel<Kernel_traits, kBlockM, 4, true><<<grid_combine, 128, 0, stream>>>(params);
+            } else if (params.num_splits <= 32) {
+                flash::combine_attn_seqk_parallel<Kernel_traits, kBlockM, 5, true><<<grid_combine, 128, 0, stream>>>(params);
+            } else if (params.num_splits <= 64) {
+                flash::combine_attn_seqk_parallel<Kernel_traits, kBlockM, 6, true><<<grid_combine, 128, 0, stream>>>(params);
+            } else if (params.num_splits <= 128) {
+              //  flash::combine_attn_seqk_parallel<Kernel_traits, kBlockM, 7, true><<<grid_combine, 128, 0, stream>>>(params);
+            }
+            CHECK_CUDA_KERNEL_LAUNCH();
+    }
 
 #if 0
     if (Is_split) { 
