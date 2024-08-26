@@ -24,6 +24,7 @@
 template<typename Kernel_traits, bool Is_causal, typename Seqlen_traits, bool Is_split=false>
 void run_flash_fwd(Flash_fwd_params &params, cudaStream_t stream) {
     using Element = typename Kernel_traits::Element;
+    using ElementAccum = typename Kernel_traits::ElementAccum;
     using OutputType = typename Kernel_traits::OutputType;
     using TileShape_MNK = typename Kernel_traits::TileShape_MNK;
     using ClusterShape = typename Kernel_traits::ClusterShape_MNK;
@@ -65,9 +66,11 @@ void run_flash_fwd(Flash_fwd_params &params, cudaStream_t stream) {
 	    params.h,
 	    params.num_splits
         });
+
+
     typename CollectiveEpilogue::Params epilogue_params =
         CollectiveEpilogue::to_underlying_arguments({
-            static_cast<OutputType*>(params.o_ptr),
+            static_cast<Element*>(params.o_ptr),
             static_cast<OutputType*>(params.oaccum_ptr),
             seqlen_traits_q.get_gmem_layout(
                 params.seqlen_q, params.d, params.h, params.b,
@@ -75,8 +78,8 @@ void run_flash_fwd(Flash_fwd_params &params, cudaStream_t stream) {
             ),  // layout_O
 	    seqlen_traits_q.get_oaccum_gmem_layout(
                 params.seqlen_q, params.d, params.h, params.b, params.num_splits,
-                params.o_row_stride, params.o_head_stride, params.o_batch_stride,  
-		(params.o_batch_stride * params.b)
+                params.oaccum_row_stride, params.oaccum_head_stride, params.oaccum_batch_stride,  
+		(params.oaccum_batch_stride * params.b)
             ), //layout_O_accum
             static_cast<float*>(params.softmax_lse_ptr),
             static_cast<float*>(params.softmax_lseaccum_ptr),
@@ -132,21 +135,17 @@ void run_flash_fwd(Flash_fwd_params &params, cudaStream_t stream) {
         // If headdim is divisible by 64, then we set kBlockM = 8, etc.
         constexpr static int kBlockM = Kernel_traits::kHeadDim % 128 == 0 ? 4 : (Kernel_traits::kHeadDim % 64 == 0 ? 8 : 16);
         dim3 grid_combine((params.b * params.h * params.seqlen_q + kBlockM - 1) / kBlockM);
+	std::cout << grid_combine << " " <<  params.b << " " << params.h << " " << params.seqlen_q << std::endl;
+        dim3 block_dims(128);
+        dim3 cluster_dims(1, 1, 1);
             if (params.num_splits <= 2) {
-                flash::combine_attn_seqk_parallel<Kernel_traits, kBlockM, 1, true><<<grid_combine, 128, 0, stream>>>(params);
-            } else if (params.num_splits <= 4) {
-                flash::combine_attn_seqk_parallel<Kernel_traits, kBlockM, 2, true><<<grid_combine, 128, 0, stream>>>(params);
-            } else if (params.num_splits <= 8) {
-                flash::combine_attn_seqk_parallel<Kernel_traits, kBlockM, 3, true><<<grid_combine, 128, 0, stream>>>(params);
-            } else if (params.num_splits <= 16) {
-                flash::combine_attn_seqk_parallel<Kernel_traits, kBlockM, 4, true><<<grid_combine, 128, 0, stream>>>(params);
-            } else if (params.num_splits <= 32) {
-                flash::combine_attn_seqk_parallel<Kernel_traits, kBlockM, 5, true><<<grid_combine, 128, 0, stream>>>(params);
-            } else if (params.num_splits <= 64) {
-                flash::combine_attn_seqk_parallel<Kernel_traits, kBlockM, 6, true><<<grid_combine, 128, 0, stream>>>(params);
-            } else if (params.num_splits <= 128) {
-              //  flash::combine_attn_seqk_parallel<Kernel_traits, kBlockM, 7, true><<<grid_combine, 128, 0, stream>>>(params);
-            }
+             void *kernel = (void *) flash::combine_attn_seqk_parallel<Kernel_traits, kBlockM, 1, true, Flash_fwd_params>;
+              int smem_size = 2 * sizeof(flash::SharedStorageLSE<float, Shape<Int<2>, Int<kBlockM+1>>>);
+              CHECK_CUDA(cudaFuncSetAttribute(kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, smem_size));
+              cutlass::ClusterLaunchParams launch_params{grid_dims, block_dims, cluster_dims, smem_size, stream};
+               cutlass::launch_kernel_on_cluster(launch_params, kernel, params);
+        //        flash::combine_attn_seqk_parallel<Kernel_traits, kBlockM, 1, true><<<grid_combine, 128, (kBlockM + 1 ) * 2 * sizeof(float), stream>>>(params);
+            } 
             CHECK_CUDA_KERNEL_LAUNCH();
     }
 

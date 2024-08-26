@@ -69,6 +69,7 @@ void set_params_fprop(Flash_fwd_params &params,
     params.o_row_stride = out.stride(-3);
     params.o_head_stride = out.stride(-2);
 
+
     if (cu_seqlens_q_d == nullptr) {
         params.q_batch_stride = q.stride(0);
         params.k_batch_stride = k.stride(0);
@@ -247,11 +248,14 @@ std::tuple<at::Tensor, at::Tensor> set_params_splitkv(Flash_fwd_params &params, 
 	}
         if (params.num_splits > 1) {
             softmax_lse_accum = torch::empty({num_splits, batch_size, num_heads, max_seqlen_q}, opts.dtype(at::kFloat));
-            out_accum = torch::empty({num_splits, batch_size, max_seqlen_q, num_heads, head_size_rounded}, opts.dtype(at::kFloat));
+            out_accum = torch::empty({num_splits, batch_size, num_heads, max_seqlen_q, head_size_rounded}, opts.dtype(at::kFloat));
             //out_accum = torch::empty({batch_size, num_heads, max_seqlen_q, head_size_rounded}, opts.dtype(at::kFloat));
             params.softmax_lseaccum_ptr = softmax_lse_accum.data_ptr();
             params.oaccum_ptr = out_accum.data_ptr();
-        }
+	    params.oaccum_row_stride = out_accum.stride(-3);
+	    params.oaccum_head_stride = out_accum.stride(-2);
+	    params.oaccum_batch_stride = out_accum.stride(0);
+	}
         TORCH_CHECK(params.num_splits <= 128, "num_splits > 128 not supported");
     }
 
@@ -1230,6 +1234,7 @@ mha_fwd_kvcache(at::Tensor &q,                 // batch_size x seqlen_q x num_he
     std::tie(softmax_lse_accum, out_accum) = set_params_splitkv(
         params, batch_size, num_heads, head_size, seqlen_k, seqlen_q,
         head_size_rounded, /*dropout*/ 0.f, num_splits, dprops, opts);
+    out.zero_();
 
     if (paged_KV) {
         params.block_table = block_table.data_ptr<int>();

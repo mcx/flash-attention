@@ -49,6 +49,11 @@ struct Flash_fwd_params : public Qkv_params {
     index_t o_row_stride;
     index_t o_head_stride;
 
+    // The stride between rows of O.
+    index_t oaccum_batch_stride;
+    index_t oaccum_row_stride;
+    index_t oaccum_head_stride;
+
     // The pointer to the P matrix.
     void * __restrict__ p_ptr;
 

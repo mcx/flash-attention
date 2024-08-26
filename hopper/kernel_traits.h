@@ -61,7 +61,7 @@ template<int kHeadDim_, int kBlockM_, int kBlockN_, int kNWarps_, int kStages_, 
 struct Flash_fwd_kernel_traits {
     using Element = elem_type;
     using ElementAccum = float;
-    using OutputType = typename std::conditional<Is_split, float, elem_type>::type;  
+    using OutputType = std::conditional_t<Is_split, float, elem_type>;
     using index_t = int64_t;
 
     // The number of threads.

@@ -16,8 +16,13 @@ using namespace cute;
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+template <class Element, class SmemLayout>
+struct SharedStorageLSE {
+    cute::array_aligned<Element, cute::size_v<SmemLayout>> smem_lse;
+};
+
 template<typename Kernel_traits, int kBlockM, int Log_max_splits, bool Is_even_K, typename Params>
-inline __global__ void combine_attn_seqk_parallel(const Params &params) {
+__global__ void combine_attn_seqk_parallel(Params  const params) {
     using Element = typename Kernel_traits::Element;
     using ElementAccum = typename Kernel_traits::ElementAccum;
     using index_t = typename Kernel_traits::index_t;
@@ -31,13 +36,20 @@ inline __global__ void combine_attn_seqk_parallel(const Params &params) {
 
     // Shared memory.
     // kBlockM + 1 instead of kBlockM to reduce bank conflicts.
-    __shared__ ElementAccum sLSE[kMaxSplits][kBlockM + 1];
+    //__shared__ __align__(16) ElementAccum sLSE[kMaxSplits][kBlockM+1];
+    extern __shared__  char smem_[];
+    using SharedStorage = SharedStorageLSE<ElementAccum, Shape<Int<kMaxSplits>, Int<kBlockM+1>>>;
+    SharedStorage &shared_storage =
+      *reinterpret_cast<SharedStorage *>(smem_);
+    Tensor sLSE = make_tensor(make_smem_ptr(shared_storage.smem_lse.data()), Shape<Int<kMaxSplits>, Int<kBlockM+1>>{});
+
 
     // The thread and block index.
     const int tidx = threadIdx.x;
     const int bidx = blockIdx.x;
 
     const index_t lse_size = params.b * params.h * params.seqlen_q;
+    if (cute::thread0()) print ("final %d %d %d %d\n",  params.b, params.h, params.seqlen_q, params.b * params.h * params.seqlen_q); 
 
     const index_t row_offset_lse = bidx * kBlockM;
     Tensor gLSEaccum = make_tensor(make_gmem_ptr(reinterpret_cast<ElementAccum *>(params.softmax_lseaccum_ptr) + row_offset_lse),
@@ -67,7 +79,7 @@ inline __global__ void combine_attn_seqk_parallel(const Params &params) {
         const int row = l * kRowsPerLoadLSE + tidx / kBlockM;
         const int col = tidx % kBlockM;
         ElementAccum lse = (row < params.num_splits && col < lse_size - bidx * kBlockM) ? gLSEaccum(row, col) : -INFINITY;
-        if (row < kMaxSplits) { sLSE[row][col] = lse; }
+        if (row < kMaxSplits) { sLSE(row,col) = lse; }
         // if (bidx == 0 && tidx < 32) { printf("tidx = %d, row = %d, col = %d, lse = %f\n", tidx, row, col, lse); }
     }
     // if (bidx == 1 && tidx < 32) { printf("tidx = %d, row_offset_lse = %d, lse = %f\n", tidx, row_offset_lse, lse_accum(0)); }
@@ -85,9 +97,13 @@ inline __global__ void combine_attn_seqk_parallel(const Params &params) {
     for (int l = 0; l < kNLsePerThread; ++l) {
         const int row = l * kRowsPerLoadTranspose + tidx % kRowsPerLoadTranspose;
         const int col = tidx / kRowsPerLoadTranspose;
-        lse_accum(l) = (row < kMaxSplits && col < kBlockM) ? sLSE[row][col] : -INFINITY;
-        // if (bidx == 0 && tidx < 32) { printf("tidx = %d, row = %d, col = %d, lse = %f\n", tidx, row, col, lse_accum(l)); }
+        //if (bidx == 0 && tidx < 128) { printf("tidx = %d, row = %d, col = %d, lse = %f\n", tidx, row, col, lse_accum(l)); }
+        lse_accum(l) = (row < kMaxSplits && col < kBlockM) ? sLSE(row,col) : -INFINITY;
+        //if (row < kMaxSplits && col < kBlockM) { sLSE[row][col] = gLSEaccum(row,col) + 1; }
+        //if (row < kMaxSplits && col < kBlockM) { lse_accum(l) = gLSEaccum(row,col); }
+        //lse_accum(l) = (row < kMaxSplits && col < kBlockM) ? sLSE[0][0] : -INFINITY;
     }
+    //return;
 
     // Compute the logsumexp of the LSE along the split dimension.
     ElementAccum lse_max = lse_accum(0);
@@ -104,7 +120,6 @@ inline __global__ void combine_attn_seqk_parallel(const Params &params) {
     // For the case where all local lse == -INFINITY, we want to set lse_logsum to INFINITY. Otherwise
     // lse_logsum is log(0.0) = -INFINITY and we get NaN when we do lse_accum(l) - lse_logsum.
     ElementAccum lse_logsum = (lse_sum == 0.f || lse_sum != lse_sum) ? INFINITY : logf(lse_sum) + lse_max;
-    //return;
     // if (bidx == 0 && tidx < 32) { printf("tidx = %d, lse = %f, lse_max = %f, lse_logsum = %f\n", tidx, lse_accum(0), lse_max, lse_logsum); }
     if (tidx % kRowsPerLoadTranspose == 0 && tidx / kRowsPerLoadTranspose < kBlockM) {
         if (params.unpadded_lse) {
@@ -121,7 +136,7 @@ inline __global__ void combine_attn_seqk_parallel(const Params &params) {
     for (int l = 0; l < kNLsePerThread; ++l) {
         const int row = l * kRowsPerLoadTranspose + tidx % kRowsPerLoadTranspose;
         const int col = tidx / kRowsPerLoadTranspose;
-        if (row < params.num_splits && col < kBlockM) { sLSE[row][col] = expf(lse_accum(l) - lse_logsum); }
+        if (row < params.num_splits && col < kBlockM) { sLSE(row,col) = expf(lse_accum(l) - lse_logsum); }
     }
     __syncthreads();
 
@@ -144,6 +159,7 @@ inline __global__ void combine_attn_seqk_parallel(const Params &params) {
 
     // Predicates
     Tensor cOaccum = make_identity_tensor(Shape<Int<kBlockM>, Int<kHeadDim>>{});
+    //if (cute::thread0()) print_tensor (cOaccum);
     // Repeat the partitioning with identity layouts
     Tensor tOcOaccum = gmem_thr_copy_Oaccum.partition_S(cOaccum);
     Tensor tOpOaccum = make_tensor<bool>(make_shape(size<2>(tOgOaccum)));
@@ -159,26 +175,29 @@ inline __global__ void combine_attn_seqk_parallel(const Params &params) {
         #pragma unroll
         for (int m = 0; m < size<1>(tOrOaccum); ++m) {
             int row = get<0>(tOcOaccum(0, m, 0));
-            ElementAccum lse_scale = sLSE[split][row];
+            ElementAccum lse_scale = sLSE(split,row);
             #pragma unroll
             for (int k = 0; k < size<2>(tOrOaccum); ++k) {
                 #pragma unroll
                 for (int i = 0; i < size<0>(tOrOaccum); ++i) {
                     tOrO(i, m, k) += lse_scale * tOrOaccum(i, m, k);
+                    //tOrO(i, m, k) += tOrOaccum(i, m, k);
                 }
             }
-        // if (cute::thread0()) { printf("lse_scale = %f, %f\n", sLSE[split][0], sLSE[split][1]); print(tOrOaccum); }
+         if (cute::thread0()) { printf("lse_scale = %f, %f\n", sLSE(split, 0), sLSE(split, 1)); print(tOrOaccum); }
         }
         tOgOaccum.data() = tOgOaccum.data() + params.b * params.h * params.seqlen_q * params.d_rounded;
     }
-    // if (cute::thread0()) { print_tensor(tOrO); }
+     if (cute::thread0()) { print_tensor(tOrO); }
 
     Tensor rO = flash::convert_type<Element>(tOrO);
     // Write to gO
     #pragma unroll
     for (int m = 0; m < size<1>(rO); ++m) {
         const int idx = bidx * kBlockM + get<0>(tOcOaccum(0, m, 0));
+        //if (cute::thread0()) print ("final %d %d %d %d %d\n", idx, params.b, params.h, params.seqlen_q, params.b * params.h * params.seqlen_q); 
         if (idx < params.b * params.h * params.seqlen_q) {
+            //print ("final2\n"); 
             const int batch_idx = idx / (params.h * params.seqlen_q);
             const int head_idx = (idx - batch_idx * (params.h * params.seqlen_q)) / params.seqlen_q;
             // The index to the rows of Q
@@ -193,6 +212,7 @@ inline __global__ void combine_attn_seqk_parallel(const Params &params) {
                                             Shape<Int<decltype(size<0>(rO))::value>>{}, Stride<_1>{});
                     // TODO: Should check if this is using vectorized store, but it seems pretty fast
                     copy(rO(_, m, k), gO);
+                    //{ print ("final\n"); print_tensor(gO); }
                     // if (bidx == 0 && tidx == 0) { printf("tidx = %d, idx = %d, batch_idx = %d, head_idx = %d, row = %d, col = %d\n", tidx, idx, batch_idx, head_idx, row, col); print(rO(_, m, k)); print(gO); }
                     // reinterpret_cast<uint64_t *>(o_ptr)[col / 4] = recast<uint64_t>(rO)(0, m, k);
                 }

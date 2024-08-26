@@ -96,7 +96,8 @@ def main():
         cache_seqlens=cache_seqlen_large,
         cache_batch_idx=cache_idx_large,
         causal=bool(args.causal),
-        num_splits=args.splits
+        #num_splits=args.splits
+        num_splits=1
     )
 
     # Second for n-1 small queries
@@ -146,7 +147,8 @@ def main():
         cache_seqlens=cache_seqlen_large,
         cache_batch_idx=cache_idx_large,
         causal=bool(args.causal),
-        num_splits=args.splits
+        #num_splits=args.splits
+        num_splits=1
     )
 
     benchmark_fa_kv(fa3.flash_attn_with_kvcache, repeats=10, desc='', verbose=True,  
