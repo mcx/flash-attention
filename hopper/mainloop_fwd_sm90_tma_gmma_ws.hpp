@@ -227,7 +227,8 @@ struct CollectiveMainloopFwd {
           const Seqlen_traits& seqlen_traits_k
         ) {
         static constexpr int kBlockM = get<0>(TileShape_MNK{});
-        static constexpr int kBlockN = get<1>(TileShape_MNK{});        
+        static constexpr int kBlockN = get<1>(TileShape_MNK{});
+        static constexpr int kBlockM_div_H = kBlockM/Ktraits::kBlockH;  
         // int const seqlen_q = Seqlen_traits_Q::UseVarSeqLen ? seqlen_traits_q.actual_seq_len : shape<0>(mainloop_params.layout_Q);
         // int const seqlen_k = Seqlen_traits::UseVarSeqLen ? seqlen_traits_k.actual_seq_len : shape<0>(mainloop_params.layout_K);
         int const seqlen_q = seqlen_traits_q.actual_seq_len;
@@ -235,7 +236,7 @@ struct CollectiveMainloopFwd {
         int n_block_max = cute::ceil_div(seqlen_k, kBlockN);
         if constexpr (Is_causal) {
             n_block_max = std::min(n_block_max,
-                                   cute::ceil_div((m_block + 1) * kBlockM + seqlen_k - seqlen_q, kBlockN));
+                                   cute::ceil_div((m_block + 1) * kBlockM_div_H + seqlen_k - seqlen_q, kBlockN));
         }
         return n_block_max;
     }
@@ -676,6 +677,7 @@ struct CollectiveMainloopFwd {
 
         static constexpr int kBlockM = get<0>(TileShape_MNK{});
         static constexpr int kBlockN = get<1>(TileShape_MNK{});
+        static constexpr int kBlockM_div_H = kBlockM / Ktraits::kBlockH;
 
         Tensor sQ = make_tensor(make_smem_ptr(shared_storage.smem_q.data()), SmemLayoutQ{});
         Tensor sK = make_tensor(make_smem_ptr(shared_storage.smem_k.data()), SmemLayoutK{});
@@ -727,7 +729,7 @@ struct CollectiveMainloopFwd {
         ++smem_pipe_read_k;
 
         auto col_limit_causal = [&](int row, int n_block) {
-            return row + 1 + seqlen_k - n_block * kBlockN - seqlen_q + m_block * kBlockM;
+            return row + 1 + seqlen_k - n_block * kBlockN - seqlen_q + m_block * kBlockM_div_H;
         };
         {
             Tensor cS = cute::make_identity_tensor(select<0, 1>(TileShape_MNK{}));
@@ -740,8 +742,9 @@ struct CollectiveMainloopFwd {
                     // using std::min is faster than doing col >= limit0 or col >= limit1
                     // Need to cast get<1>(tScS(i)) to (signed) int since by default it's unsigned, and the
                     // right hand side can be negative and might be converted to a very large unsigned integer.
+                    int row = int(get<0>(tScS(i))) / Ktraits::kBlockH;
                     if (int(get<1>(tScS(i))) >= std::min(seqlen_k - n_block * kBlockN,
-                                                        col_limit_causal(int(get<0>(tScS(i))), n_block))) {
+                                                        col_limit_causal(row, n_block))) {
                         tSrS(i) = -INFINITY;
                     }
                 }
@@ -771,7 +774,8 @@ struct CollectiveMainloopFwd {
             Tensor tScS = threadMma0.partition_C(cS);
             #pragma unroll
             for (int i = 0; i < size(tSrS); ++i) {
-                if (int(get<1>(tScS(i))) >= col_limit_causal(int(get<0>(tScS(i))), n_block - 1)) {
+                int row = int(get<0>(tScS(i))) / Ktraits::kBlockH;
+                if (int(get<1>(tScS(i))) >= col_limit_causal(row, n_block - 1)) {
                     tSrS(i) = -INFINITY;
                 }
             }
