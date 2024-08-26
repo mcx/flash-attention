@@ -49,7 +49,7 @@ __global__ void combine_attn_seqk_parallel(Params  const params) {
     const int bidx = blockIdx.x;
 
     const index_t lse_size = params.b * params.h * params.seqlen_q;
-    if (cute::thread0()) print ("final %d %d %d %d\n",  params.b, params.h, params.seqlen_q, params.b * params.h * params.seqlen_q); 
+    //if (cute::thread0()) print ("final %d %d %d %d\n",  params.b, params.h, params.seqlen_q, params.b * params.h * params.seqlen_q); 
 
     const index_t row_offset_lse = bidx * kBlockM;
     Tensor gLSEaccum = make_tensor(make_gmem_ptr(reinterpret_cast<ElementAccum *>(params.softmax_lseaccum_ptr) + row_offset_lse),
@@ -99,9 +99,6 @@ __global__ void combine_attn_seqk_parallel(Params  const params) {
         const int col = tidx / kRowsPerLoadTranspose;
         //if (bidx == 0 && tidx < 128) { printf("tidx = %d, row = %d, col = %d, lse = %f\n", tidx, row, col, lse_accum(l)); }
         lse_accum(l) = (row < kMaxSplits && col < kBlockM) ? sLSE(row,col) : -INFINITY;
-        //if (row < kMaxSplits && col < kBlockM) { sLSE[row][col] = gLSEaccum(row,col) + 1; }
-        //if (row < kMaxSplits && col < kBlockM) { lse_accum(l) = gLSEaccum(row,col); }
-        //lse_accum(l) = (row < kMaxSplits && col < kBlockM) ? sLSE[0][0] : -INFINITY;
     }
     //return;
 
@@ -184,11 +181,11 @@ __global__ void combine_attn_seqk_parallel(Params  const params) {
                     //tOrO(i, m, k) += tOrOaccum(i, m, k);
                 }
             }
-         if (cute::thread0()) { printf("lse_scale = %f, %f\n", sLSE(split, 0), sLSE(split, 1)); print(tOrOaccum); }
+         //if (cute::thread0()) { printf("lse_scale = %f, %f\n", sLSE(split, 0), sLSE(split, 1)); print(tOrOaccum); }
         }
         tOgOaccum.data() = tOgOaccum.data() + params.b * params.h * params.seqlen_q * params.d_rounded;
     }
-     if (cute::thread0()) { print_tensor(tOrO); }
+     //if (cute::thread0()) { print_tensor(tOrO); }
 
     Tensor rO = flash::convert_type<Element>(tOrO);
     // Write to gO

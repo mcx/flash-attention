@@ -135,7 +135,7 @@ void run_flash_fwd(Flash_fwd_params &params, cudaStream_t stream) {
         // If headdim is divisible by 64, then we set kBlockM = 8, etc.
         constexpr static int kBlockM = Kernel_traits::kHeadDim % 128 == 0 ? 4 : (Kernel_traits::kHeadDim % 64 == 0 ? 8 : 16);
         dim3 grid_combine((params.b * params.h * params.seqlen_q + kBlockM - 1) / kBlockM);
-	std::cout << grid_combine << " " <<  params.b << " " << params.h << " " << params.seqlen_q << std::endl;
+	//std::cout << grid_combine << " " <<  params.b << " " << params.h << " " << params.seqlen_q << std::endl;
         dim3 block_dims(128);
         dim3 cluster_dims(1, 1, 1);
             if (params.num_splits <= 2) {

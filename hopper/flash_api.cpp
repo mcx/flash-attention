@@ -252,9 +252,9 @@ std::tuple<at::Tensor, at::Tensor> set_params_splitkv(Flash_fwd_params &params, 
             //out_accum = torch::empty({batch_size, num_heads, max_seqlen_q, head_size_rounded}, opts.dtype(at::kFloat));
             params.softmax_lseaccum_ptr = softmax_lse_accum.data_ptr();
             params.oaccum_ptr = out_accum.data_ptr();
-	    params.oaccum_row_stride = out_accum.stride(-3);
-	    params.oaccum_head_stride = out_accum.stride(-2);
-	    params.oaccum_batch_stride = out_accum.stride(0);
+	    params.oaccum_row_stride = out_accum.stride(-2);
+	    params.oaccum_head_stride = out_accum.stride(-3);
+	    params.oaccum_batch_stride = out_accum.stride(-4);
 	}
         TORCH_CHECK(params.num_splits <= 128, "num_splits > 128 not supported");
     }
