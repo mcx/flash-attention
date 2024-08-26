@@ -138,6 +138,7 @@ def main():
     )
 
     print ((out1 - out3).abs().max().item())
+    print ((out1 - out3).abs().mean().item())
 
     #return
 

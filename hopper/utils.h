@@ -424,19 +424,15 @@ __forceinline__ __device__ void write_tiled_split(
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-template <bool IsTMACopy, int NumCopyThreads, typename ElemO,
-          typename TMACopyO, typename TiledCopyO, typename LayoutO,
+template <int NumCopyThreads, typename ElemO,
+          typename TMACopyO, typename LayoutO,
           typename TileShapeO, typename SMemO, typename SeqLenTraits>
 __forceinline__ __device__ void write_O_split(
-        ElemO* O, const TMACopyO& tma_copy_O, const TiledCopyO& tiled_copy_O,
+        ElemO* O, const TMACopyO& tma_copy_O, 
         const LayoutO& layout_O, const TileShapeO& tile_shape_O,
         const SMemO& sO, int m_block, int bidh, int bidb, int split_idx,
         const SeqLenTraits& seqlen_traits_o, int write_warp_idx) {
-    if constexpr (IsTMACopy) {
         write_tma_split<NumCopyThreads>(O, tma_copy_O, layout_O, tile_shape_O, sO, m_block, bidh, bidb, split_idx, seqlen_traits_o, write_warp_idx);
-    } else {
-        write_tiled_split<NumCopyThreads>(O, tiled_copy_O, layout_O, tile_shape_O, sO, m_block, bidh, bidb, split_idx, seqlen_traits_o);
-    }
 }
 
 

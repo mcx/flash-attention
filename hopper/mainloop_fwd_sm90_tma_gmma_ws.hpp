@@ -156,8 +156,8 @@ struct CollectiveMainloopFwd {
         typename Seqlen_traits::LayoutT layout_V;
         float const softmax_scale_log2;
         int const* cache_batch_idx;
-	int h;
-	int num_splits;
+        int h;
+        int num_splits;
     };
 
     // Device side kernel params
@@ -171,8 +171,8 @@ struct CollectiveMainloopFwd {
         TMA_V tma_load_V;
         float const softmax_scale_log2;
         int const* cache_batch_idx;
-	int h;
-	int num_splits;
+        int h;
+        int num_splits;
     };
 
 
@@ -801,14 +801,14 @@ struct CollectiveMainloopFwd {
         softmax.rescale_o(tOrO, scores_scale);
         consumer_wait(pipeline_v, smem_pipe_read_v);
         flash::gemm</*zero_init=*/false, /*wg_wait=*/-1>(tiled_mma1, tOrP, tOrV(_, _, _, smem_pipe_read_v.index()), tOrO);
-        cute::copy(softmax.template finalize</*Check_inf=*/Is_causal, Is_split>(tSrS, mainloop_params.softmax_scale_log2), scores_scale);
+        cute::copy(softmax.template finalize<false, Is_split>(tSrS, mainloop_params.softmax_scale_log2), scores_scale);
         warpgroup_wait<0>();
         pipeline_v.consumer_release(smem_pipe_read_v);  // release V, otherwise producers will hang
         ++smem_pipe_read_v;
 
-	if (!Is_split) {
+        //if (!Is_split) {
           softmax.rescale_o(tOrO, scores_scale);
-	}
+        //}
         return;
     }
 
@@ -1036,9 +1036,9 @@ struct CollectiveMainloopFwd {
         cutlass::arch::NamedBarrier::arrive(NumMmaThreads + cutlass::NumThreadsPerWarpGroup, static_cast<int>(FwdNamedBarriers::QueryEmpty) /*id*/);
         
         cute::copy(softmax.template finalize</*Check_inf=*/Is_causal>(tSrS, mainloop_params.softmax_scale_log2), scores_scale);
-	if (!Is_split) {
+        if (!Is_split) {
           softmax.rescale_o(tOrO, scores_scale);
-	}
+        }
         return;
     }
 

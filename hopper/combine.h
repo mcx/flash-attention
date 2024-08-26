@@ -209,7 +209,7 @@ __global__ void combine_attn_seqk_parallel(Params  const params) {
                                             Shape<Int<decltype(size<0>(rO))::value>>{}, Stride<_1>{});
                     // TODO: Should check if this is using vectorized store, but it seems pretty fast
                     copy(rO(_, m, k), gO);
-                    //{ print ("final\n"); print_tensor(gO); }
+                    if (cute::thread0()) { print ("final\n"); print_tensor(gO); }
                     // if (bidx == 0 && tidx == 0) { printf("tidx = %d, idx = %d, batch_idx = %d, head_idx = %d, row = %d, col = %d\n", tidx, idx, batch_idx, head_idx, row, col); print(rO(_, m, k)); print(gO); }
                     // reinterpret_cast<uint64_t *>(o_ptr)[col / 4] = recast<uint64_t>(rO)(0, m, k);
                 }
