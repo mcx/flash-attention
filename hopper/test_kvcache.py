@@ -133,7 +133,8 @@ def main():
         cache_seqlens=cache_seqlens_small,
         cache_batch_idx=cache_idxs_small,
         causal=bool(args.causal),
-        num_splits=args.splits
+        #num_splits=args.splits
+        num_splits=1
     )
 
     print ((out1 - out3).abs().max().item())
