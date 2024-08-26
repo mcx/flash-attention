@@ -245,7 +245,11 @@ void run_mha_fwd(Flash_fwd_params &params, cudaStream_t stream, bool force_split
             if (params.d == 64) {
                 run_mha_fwd_<cutlass::bfloat16_t, 64>(params, stream);
             } else if (params.d == 128) {
-                run_mha_fwd_<cutlass::bfloat16_t, 128>(params, stream);
+                if(params.use_gqa_decoding) {
+                    run_mha_fwd_gqa_<cutlass::bfloat16_t, 128>(params, stream);
+                } else {
+                    run_mha_fwd_<cutlass::bfloat16_t, 128>(params, stream);
+                }
             } else {
                 run_mha_fwd_<cutlass::bfloat16_t, 256>(params, stream);
             }
@@ -1041,7 +1045,8 @@ mha_fwd_kvcache(at::Tensor &q,                 // batch_size x seqlen_q x num_he
                 int window_size_right,
                 const float softcap,
                 bool is_rotary_interleaved,   // if true, rotary combines indices 0 & 1, else indices 0 & rotary_dim / 2
-                int num_splits
+                int num_splits,
+                bool use_gqa_decoding
                 ) {
 
     auto dprops = at::cuda::getCurrentDeviceProperties();
@@ -1182,6 +1187,8 @@ mha_fwd_kvcache(at::Tensor &q,                 // batch_size x seqlen_q x num_he
 
     auto tile_count_semaphore = is_causal ? torch::zeros({1}, opts.dtype(torch::kInt32)) : torch::empty({1}, opts.dtype(torch::kInt32));
     params.tile_count_semaphore = tile_count_semaphore.data_ptr<int>();
+
+    params.use_gqa_decoding = use_gqa_decoding;
 
     at::Tensor k, v, k_padded, v_padded;
     if (k_.has_value()) {
