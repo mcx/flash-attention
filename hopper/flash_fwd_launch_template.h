@@ -79,7 +79,7 @@ void run_flash_fwd(Flash_fwd_params &params, cudaStream_t stream) {
 	    seqlen_traits_q.get_oaccum_gmem_layout(
                 params.seqlen_q, params.d, params.h, params.b, params.num_splits,
                 params.oaccum_row_stride, params.oaccum_head_stride, params.oaccum_batch_stride,  
-		(params.oaccum_batch_stride * params.b)
+		            params.oaccum_split_stride
             ), //layout_O_accum
             static_cast<float*>(params.softmax_lse_ptr),
             static_cast<float*>(params.softmax_lseaccum_ptr),
@@ -143,7 +143,7 @@ void run_flash_fwd(Flash_fwd_params &params, cudaStream_t stream) {
               int smem_size = 2 * sizeof(flash::SharedStorageLSE<float, Shape<Int<2>, Int<kBlockM+1>>>);
               CHECK_CUDA(cudaFuncSetAttribute(kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, smem_size));
               cutlass::ClusterLaunchParams launch_params{grid_dims, block_dims, cluster_dims, smem_size, stream};
-               cutlass::launch_kernel_on_cluster(launch_params, kernel, params);
+              cutlass::launch_kernel_on_cluster(launch_params, kernel, params);
         //        flash::combine_attn_seqk_parallel<Kernel_traits, kBlockM, 1, true><<<grid_combine, 128, (kBlockM + 1 ) * 2 * sizeof(float), stream>>>(params);
             } 
             CHECK_CUDA_KERNEL_LAUNCH();

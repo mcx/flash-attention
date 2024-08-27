@@ -128,6 +128,8 @@ __global__ void combine_attn_seqk_parallel(Params  const params) {
             gLSE(tidx / kRowsPerLoadTranspose) = lse_logsum;
         }
     }
+    if (cute::thread0()) printf ("lse_logsum = %f\n", lse_logsum);
+
     // Store the scales exp(lse - lse_logsum) in shared memory.
     #pragma unroll
     for (int l = 0; l < kNLsePerThread; ++l) {
@@ -181,11 +183,11 @@ __global__ void combine_attn_seqk_parallel(Params  const params) {
                     //tOrO(i, m, k) += tOrOaccum(i, m, k);
                 }
             }
-         //if (cute::thread0()) { printf("lse_scale = %f, %f\n", sLSE(split, 0), sLSE(split, 1)); print(tOrOaccum); }
+         if (cute::thread0()) { printf("lse_scale = %f, %f\n", sLSE(split, 0), sLSE(split, 1)); print_tensor(tOrOaccum); }
         }
         tOgOaccum.data() = tOgOaccum.data() + params.b * params.h * params.seqlen_q * params.d_rounded;
     }
-     //if (cute::thread0()) { print_tensor(tOrO); }
+     if (cute::thread0()) { print_tensor(tOrO); }
 
     Tensor rO = flash::convert_type<Element>(tOrO);
     // Write to gO

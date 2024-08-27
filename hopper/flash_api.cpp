@@ -247,17 +247,16 @@ std::tuple<at::Tensor, at::Tensor> set_params_splitkv(Flash_fwd_params &params, 
                TORCH_CHECK(false, "num_splits heuristic is not supported yet");
 	}
         if (params.num_splits > 1) {
-            softmax_lse_accum = torch::empty({num_splits, batch_size, num_heads, max_seqlen_q}, opts.dtype(at::kFloat));
-            out_accum = torch::empty({num_splits, batch_size, num_heads, max_seqlen_q, head_size_rounded}, opts.dtype(at::kFloat));
+            softmax_lse_accum = torch::zeros({num_splits, batch_size, num_heads, max_seqlen_q}, opts.dtype(at::kFloat));
+            out_accum = torch::zeros({num_splits, batch_size, num_heads, max_seqlen_q, head_size_rounded}, opts.dtype(at::kFloat));
             //out_accum = torch::empty({batch_size, num_heads, max_seqlen_q, head_size_rounded}, opts.dtype(at::kFloat));
             params.softmax_lseaccum_ptr = softmax_lse_accum.data_ptr();
             params.oaccum_ptr = out_accum.data_ptr();
-	    params.oaccum_row_stride = out_accum.stride(-2);
-	    params.oaccum_head_stride = out_accum.stride(-3);
-	    params.oaccum_batch_stride = out_accum.stride(-4);
-	    out_accum.zero_();
-	    softmax_lse_accum.zero_();
-	}
+            params.oaccum_row_stride = out_accum.stride(-2);
+            params.oaccum_head_stride = out_accum.stride(-3);
+            params.oaccum_batch_stride = out_accum.stride(-4);
+            params.oaccum_split_stride = out_accum.stride(0);
+        }
         TORCH_CHECK(params.num_splits <= 128, "num_splits > 128 not supported");
     }
 
@@ -1102,7 +1101,8 @@ mha_fwd_kvcache(at::Tensor &q,                 // batch_size x seqlen_q x num_he
         CHECK_SHAPE(out, batch_size, seqlen_q, num_heads, head_size_og);
         if (head_size_og % 8 != 0) { out = torch::empty_like(q_padded); }
     } else {
-        out = torch::empty_like(q_padded);
+        //out = torch::empty_like(q_padded);
+        out = torch::zeros_like(q_padded);
     }
 
     auto round_multiple = [](int x, int m) { return (x + m - 1) / m * m; };
@@ -1236,7 +1236,6 @@ mha_fwd_kvcache(at::Tensor &q,                 // batch_size x seqlen_q x num_he
     std::tie(softmax_lse_accum, out_accum) = set_params_splitkv(
         params, batch_size, num_heads, head_size, seqlen_k, seqlen_q,
         head_size_rounded, /*dropout*/ 0.f, num_splits, dprops, opts);
-    out.zero_();
 
     if (paged_KV) {
         params.block_table = block_table.data_ptr<int>();
@@ -1268,7 +1267,7 @@ mha_fwd_kvcache(at::Tensor &q,                 // batch_size x seqlen_q x num_he
         out = out.transpose(1, 2).reshape({batch_size, 1, num_heads_k * seqlen_q, head_size_og});
         softmax_lse = softmax_lse.reshape({batch_size, num_heads_k * seqlen_q, 1});
     }
-    return {out, softmax_lse};
+    return {out, softmax_lse, out_accum, softmax_lse_accum};
 }
 
 
