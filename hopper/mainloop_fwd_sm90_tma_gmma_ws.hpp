@@ -225,12 +225,12 @@ struct CollectiveMainloopFwd {
         static constexpr int kBlockM = get<0>(TileShape_MNK{});
         static constexpr int kBlockN = get<1>(TileShape_MNK{});        
         // int const seqlen_q = Seqlen_traits::kUseVarSeqLen ? seqlen_traits_q.actual_seq_len : shape<0>(mainloop_params.layout_Q);
-        int const full_seqlen_k = shape<0>(mainloop_params.layout_K);
+        //int const full_seqlen_k = shape<0>(mainloop_params.layout_K);
         int const seqlen_q = seqlen_traits_q.actual_seq_len;
         int const seqlen_k = seqlen_traits_k.actual_seq_len;
 
         const int num_n_splits = Is_split ? mainloop_params.num_splits : 1;
-        const int n_blocks_per_split = ((full_seqlen_k + kBlockN - 1) / kBlockN + num_n_splits - 1) / num_n_splits;
+        const int n_blocks_per_split = ((seqlen_k + kBlockN - 1) / kBlockN + num_n_splits - 1) / num_n_splits;
         n_block_min = n_split_idx * n_blocks_per_split;
         n_block_max = std::min(cute::ceil_div(seqlen_k, kBlockN), (n_split_idx + 1) * n_blocks_per_split);
         if (Is_causal) {
@@ -655,6 +655,7 @@ struct CollectiveMainloopFwd {
         FrgTensorO& tOrO,
         Softmax& softmax,
         int n_block_count,
+	int n_block_max,
         int thread_idx,
         int work_idx,
         int m_block,
@@ -692,6 +693,7 @@ struct CollectiveMainloopFwd {
         int const seqlen_q = seqlen_traits_q.actual_seq_len;
         int const seqlen_k = seqlen_traits_k.actual_seq_len;
         int n_block = n_block_count - 1;
+	int n_block_global = n_block_max - 1;
 
         cutlass::ConsumerToken barrier_token = static_cast<cutlass::BarrierStatus>(shared_storage.barrier_Q.try_wait(work_idx % 2));
         if (barrier_token == cutlass::BarrierStatus::WaitAgain) { shared_storage.barrier_Q.wait(work_idx % 2); }
@@ -725,13 +727,13 @@ struct CollectiveMainloopFwd {
             #pragma unroll
             for (int i = 0; i < size(tSrS); ++i) {
                 if constexpr (!Is_causal) {  // Just masking based on col
-                    if (int(get<1>(tScS(i))) >= int(seqlen_k - n_block * kBlockN)) { tSrS(i) = -INFINITY; }
+                    if (int(get<1>(tScS(i))) >= int(seqlen_k - n_block_global * kBlockN)) { tSrS(i) = -INFINITY; }
                 } else {  // mask based on both row and col
                     // using std::min is faster than doing col >= limit0 or col >= limit1
                     // Need to cast get<1>(tScS(i)) to (signed) int since by default it's unsigned, and the
                     // right hand side can be negative and might be converted to a very large unsigned integer.
-                    if (int(get<1>(tScS(i))) >= std::min(seqlen_k - n_block * kBlockN,
-                                                        col_limit_causal(int(get<0>(tScS(i))), n_block))) {
+                    if (int(get<1>(tScS(i))) >= std::min(seqlen_k - n_block_global * kBlockN,
+                                                        col_limit_causal(int(get<0>(tScS(i))), n_block_global))) {
                         tSrS(i) = -INFINITY;
                     }
                 }
@@ -746,7 +748,7 @@ struct CollectiveMainloopFwd {
         constexpr int n_masking_steps = !Is_causal ? 1 : cute::ceil_div(kBlockM, kBlockN) + 1;
         // Only go through these if Is_causal, since n_masking_steps = 1 when !Is_causal
         #pragma unroll
-        for (int masking_step = 0; masking_step < n_masking_steps - 1 && n_block > 0; ++masking_step, --n_block) {
+        for (int masking_step = 0; masking_step < n_masking_steps - 1 && n_block > 0; ++masking_step, --n_block, --n_block_global) {
             Tensor tSrS = partition_fragment_C(tiled_mma0, select<0, 1>(TileShape_MNK{}));
             consumer_wait(pipeline_k, smem_pipe_read_k);
             warp_scheduler_barrier_sync();
@@ -761,7 +763,7 @@ struct CollectiveMainloopFwd {
             Tensor tScS = threadMma0.partition_C(cS);
             #pragma unroll
             for (int i = 0; i < size(tSrS); ++i) {
-                if (int(get<1>(tScS(i))) >= col_limit_causal(int(get<0>(tScS(i))), n_block - 1)) {
+                if (int(get<1>(tScS(i))) >= col_limit_causal(int(get<0>(tScS(i))), n_block_global - 1)) {
                     tSrS(i) = -INFINITY;
                 }
             }

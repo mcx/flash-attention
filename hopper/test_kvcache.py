@@ -97,8 +97,8 @@ def main():
         cache_seqlens=cache_seqlen_large,
         cache_batch_idx=cache_idx_large,
         causal=bool(args.causal),
-        #num_splits=args.splits
-        num_splits=1
+        num_splits=args.splits
+        #num_splits=1
     )
 
     # Second for n-1 small queries
@@ -123,7 +123,10 @@ def main():
         causal=bool(args.causal),
         num_splits=args.splits
     )
-    print ((out0[0] - out2).abs().max().item())
+
+    print ('big')
+    print ('diff-max\n', (out0 - out2).abs().max().item())
+    print ('diff-mean\n', (out0 - out2).abs().mean().item())
 
 
     # Second for n-1 small queries
@@ -134,56 +137,17 @@ def main():
         cache_seqlens=cache_seqlens_small,
         cache_batch_idx=cache_idxs_small,
         causal=bool(args.causal),
-        #num_splits=args.splits
-        num_splits=1
+        num_splits=args.splits
+        #num_splits=1
     )
 
-    # Second for n-1 small queries
-    out3, _, _  = fa3.flash_attn_with_kvcache(
-        q=q_buf_small,
-        k_cache=k_cache,
-        v_cache=v_cache,
-        cache_seqlens=cache_seqlens_small,
-        cache_batch_idx=cache_idxs_small,
-        causal=bool(args.causal),
-        #num_splits=args.splits
-        num_splits=1
-    )
+    print ('small')
+    print ('diff-max\n', (out1 - out3).abs().max().item())
+    print ('diff-mean\n', (out1 - out3).abs().mean().item())
 
-     # Second for n-1 small queries
-    out4, _, _  = fa3.flash_attn_with_kvcache(
-        q=q_buf_small,
-        k_cache=k_cache,
-        v_cache=v_cache,
-        cache_seqlens=cache_seqlens_small,
-        cache_batch_idx=cache_idxs_small,
-        causal=bool(args.causal),
-        #num_splits=args.splits
-        num_splits=1
-    )
+    #return
 
-    print ('fa3-split\n', out1[0], 'fa3\n', out3)
-
-    print (out1[1][0,0,0,0,0], out1[2][0,0,0,0])
-    print (out1[1][1,0,0,0,0], out1[2][1,0,0,0])
-    out00 = out1[1][0,0,0,0,0]
-    lse00 = out1[2][0,0,0,0]
-    out01 = out1[1][1,0,0,0,0]
-    lse01 = out1[2][1,0,0,0]
-    lse_max = max(lse00, lse01)
-    lse = math.log(math.exp(lse00) + math.exp(lse01))
-    lse_sum = math.exp(lse00 - lse_max) + math.exp(lse01 - lse_max)
-    lse_logsum = math.log(lse_sum) + lse_max;
-    newout00 = out00 * math.exp(lse00 - lse_logsum)
-    newout01 = out01 * math.exp(lse01 - lse_logsum)
-    combined = newout00 + newout01
-    print(newout00, newout01, 'combined', combined)
-    print ('lse', lse)
-    print ('diff\n', (out1[0] - out3).abs().max().item())
-    print ('diff\n', (out1[0] - out3).abs().mean().item())
-
-    return
-
+    print ('fa3')
     benchmark_fa_kv(fa3.flash_attn_with_kvcache, repeats=10, desc='', verbose=True,  
         q=q_buf_large,
         k_cache=k_cache,
@@ -191,8 +155,7 @@ def main():
         cache_seqlens=cache_seqlen_large,
         cache_batch_idx=cache_idx_large,
         causal=bool(args.causal),
-        #num_splits=args.splits
-        num_splits=1
+        num_splits=args.splits
     )
 
     benchmark_fa_kv(fa3.flash_attn_with_kvcache, repeats=10, desc='', verbose=True,  

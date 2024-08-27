@@ -503,7 +503,7 @@ def flash_attn_with_kvcache(
         cache_seqlens = maybe_contiguous(cache_seqlens)
     cache_batch_idx = maybe_contiguous(cache_batch_idx)
     block_table = maybe_contiguous(block_table)
-    out, softmax_lse, out_accum, softmax_lse_accum = flashattn_hopper_cuda.fwd_kvcache(
+    out, softmax_lse = flashattn_hopper_cuda.fwd_kvcache(
         q,
         k_cache,
         v_cache,
@@ -525,4 +525,4 @@ def flash_attn_with_kvcache(
         rotary_interleaved,
         num_splits,
     )
-    return (out, softmax_lse) if return_softmax_lse else (out, out_accum, softmax_lse_accum)
+    return (out, softmax_lse) if return_softmax_lse else out

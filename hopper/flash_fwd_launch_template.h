@@ -129,24 +129,52 @@ void run_flash_fwd(Flash_fwd_params &params, cudaStream_t stream) {
     CHECK_CUDA_KERNEL_LAUNCH();
 
 
-   if (params.num_splits > 1) {
-        // We want kBlockM to be as small as possible for more parallelism.
-        // With 128 threads we can load 512 elements at a time, so if headdim is divisible by 128, kBlockM = 4.
-        // If headdim is divisible by 64, then we set kBlockM = 8, etc.
-        constexpr static int kBlockM = Kernel_traits::kHeadDim % 128 == 0 ? 4 : (Kernel_traits::kHeadDim % 64 == 0 ? 8 : 16);
-        dim3 grid_combine((params.b * params.h * params.seqlen_q + kBlockM - 1) / kBlockM);
-	//std::cout << grid_combine << " " <<  params.b << " " << params.h << " " << params.seqlen_q << std::endl;
-        dim3 block_dims(128);
-        dim3 cluster_dims(1, 1, 1);
-            if (params.num_splits <= 2) {
-             void *kernel = (void *) flash::combine_attn_seqk_parallel<Kernel_traits, kBlockM, 1, true, Flash_fwd_params>;
-              int smem_size = 2 * sizeof(flash::SharedStorageLSE<float, Shape<Int<2>, Int<kBlockM+1>>>);
-              CHECK_CUDA(cudaFuncSetAttribute(kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, smem_size));
-              cutlass::ClusterLaunchParams launch_params{grid_dims, block_dims, cluster_dims, smem_size, stream};
-              cutlass::launch_kernel_on_cluster(launch_params, kernel, params);
-        //        flash::combine_attn_seqk_parallel<Kernel_traits, kBlockM, 1, true><<<grid_combine, 128, (kBlockM + 1 ) * 2 * sizeof(float), stream>>>(params);
-            } 
-            CHECK_CUDA_KERNEL_LAUNCH();
+    if (params.num_splits > 1) {
+      // We want kBlockM to be as small as possible for more parallelism.
+      // With 128 threads we can load 512 elements at a time, so if headdim is divisible by 128, kBlockM = 4.
+      // If headdim is divisible by 64, then we set kBlockM = 8, etc.
+      constexpr static int kBlockM = Kernel_traits::kHeadDim % 128 == 0 ? 4 : (Kernel_traits::kHeadDim % 64 == 0 ? 8 : 16);
+      dim3 grid_combine((params.b * params.h * params.seqlen_q + kBlockM - 1) / kBlockM);
+      //std::cout << grid_combine << " " <<  params.b << " " << params.h << " " << params.seqlen_q << std::endl;
+      dim3 block_dims(128);
+      dim3 cluster_dims(1, 1, 1);
+      if (params.num_splits <= 2) {
+        void *kernel = (void *) flash::combine_attn_seqk_parallel<Kernel_traits, kBlockM, 1, true, Flash_fwd_params>;
+        int smem_size = sizeof(flash::SharedStorageLSE<float, Shape<Int<2>, Int<kBlockM+1>>>);
+        CHECK_CUDA(cudaFuncSetAttribute(kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, smem_size));
+        cutlass::ClusterLaunchParams launch_params{grid_combine, block_dims, cluster_dims, smem_size, stream};
+        cutlass::launch_kernel_on_cluster(launch_params, kernel, params);
+        //flash::combine_attn_seqk_parallel<Kernel_traits, kBlockM, 1, true><<<grid_combine, 128, 0, stream>>>(params);
+      } else if (params.num_splits <= 4) {
+        void *kernel = (void *) flash::combine_attn_seqk_parallel<Kernel_traits, kBlockM, 2, true, Flash_fwd_params>;
+        int smem_size = sizeof(flash::SharedStorageLSE<float, Shape<Int<4>, Int<kBlockM+1>>>);
+        CHECK_CUDA(cudaFuncSetAttribute(kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, smem_size));
+        cutlass::ClusterLaunchParams launch_params{grid_combine, block_dims, cluster_dims, smem_size, stream};
+        cutlass::launch_kernel_on_cluster(launch_params, kernel, params);
+        //flash::combine_attn_seqk_parallel<Kernel_traits, kBlockM, 1, true><<<grid_combine, 128, 0, stream>>>(params);
+      } else if (params.num_splits <= 8) {
+        void *kernel = (void *) flash::combine_attn_seqk_parallel<Kernel_traits, kBlockM, 3, true, Flash_fwd_params>;
+        int smem_size = sizeof(flash::SharedStorageLSE<float, Shape<Int<8>, Int<kBlockM+1>>>);
+        CHECK_CUDA(cudaFuncSetAttribute(kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, smem_size));
+        cutlass::ClusterLaunchParams launch_params{grid_combine, block_dims, cluster_dims, smem_size, stream};
+        cutlass::launch_kernel_on_cluster(launch_params, kernel, params);
+        //flash::combine_attn_seqk_parallel<Kernel_traits, kBlockM, 1, true><<<grid_combine, 128, 0, stream>>>(params);
+      } else if (params.num_splits <= 16) {
+        void *kernel = (void *) flash::combine_attn_seqk_parallel<Kernel_traits, kBlockM, 4, true, Flash_fwd_params>;
+        int smem_size = sizeof(flash::SharedStorageLSE<float, Shape<Int<16>, Int<kBlockM+1>>>);
+        CHECK_CUDA(cudaFuncSetAttribute(kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, smem_size));
+        cutlass::ClusterLaunchParams launch_params{grid_combine, block_dims, cluster_dims, smem_size, stream};
+        cutlass::launch_kernel_on_cluster(launch_params, kernel, params);
+        //flash::combine_attn_seqk_parallel<Kernel_traits, kBlockM, 1, true><<<grid_combine, 128, 0, stream>>>(params);
+      } else if (params.num_splits <= 32) {
+        void *kernel = (void *) flash::combine_attn_seqk_parallel<Kernel_traits, kBlockM, 5, true, Flash_fwd_params>;
+        int smem_size = sizeof(flash::SharedStorageLSE<float, Shape<Int<32>, Int<kBlockM+1>>>);
+        CHECK_CUDA(cudaFuncSetAttribute(kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, smem_size));
+        cutlass::ClusterLaunchParams launch_params{grid_combine, block_dims, cluster_dims, smem_size, stream};
+        cutlass::launch_kernel_on_cluster(launch_params, kernel, params);
+        //flash::combine_attn_seqk_parallel<Kernel_traits, kBlockM, 1, true><<<grid_combine, 128, 0, stream>>>(params);
+      }
+      CHECK_CUDA_KERNEL_LAUNCH();
     }
 
 #if 0
@@ -182,7 +210,7 @@ void run_mha_fwd_hdim128(Flash_fwd_params &params, cudaStream_t stream) {
     BOOL_SWITCH(params.is_causal, Is_causal, [&] {
         SEQLEN_SWITCH(params.cu_seqlens_q, Seqlen_traits, [&] {
             // Only use Cluster if number of tiles along seqlen_q is even and not Is_causal
-            BOOL_SWITCH(cutlass::ceil_div(params.seqlen_q, 128) % 2 == 0 && !Is_causal && !Seqlen_traits::kUseVarSeqLen, UseCluster, [&] {
+            BOOL_SWITCH(cutlass::ceil_div(params.seqlen_q, 128) % 2 == 0 && !Is_causal && !Seqlen_traits::kUseVarSeqLen && params.num_splits <=1, UseCluster, [&] {
                 BOOL_SWITCH(params.num_splits > 1, Is_split, [&] {
                 run_flash_fwd<
                     Flash_fwd_kernel_traits<Headdim, 128, Is_causal ? 128 : 176, 12, 2, false, UseCluster ? 2 : 1, T, Is_split>, 
