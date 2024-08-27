@@ -248,7 +248,9 @@ std::tuple<at::Tensor, at::Tensor> set_params_splitkv(Flash_fwd_params &params, 
 	}
         if (params.num_splits > 1) {
             softmax_lse_accum = torch::empty({num_splits, batch_size, num_heads, max_seqlen_q}, opts.dtype(at::kFloat));
-            out_accum = torch::zeros({num_splits, batch_size, num_heads, max_seqlen_q, head_size_rounded}, opts.dtype(at::kFloat));
+            // softmax_lse_accum = torch::zeros({num_splits, batch_size, num_heads, max_seqlen_q}, opts.dtype(at::kFloat));
+            // out_accum = torch::zeros({num_splits, batch_size, num_heads, max_seqlen_q, head_size_rounded}, opts.dtype(at::kFloat));
+            out_accum = torch::empty({num_splits, batch_size, num_heads, max_seqlen_q, head_size_rounded}, opts.dtype(at::kFloat));
             //out_accum = torch::empty({batch_size, num_heads, max_seqlen_q, head_size_rounded}, opts.dtype(at::kFloat));
             params.softmax_lseaccum_ptr = softmax_lse_accum.data_ptr();
             params.oaccum_ptr = out_accum.data_ptr();

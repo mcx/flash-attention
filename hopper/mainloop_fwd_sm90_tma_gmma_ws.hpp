@@ -234,9 +234,8 @@ struct CollectiveMainloopFwd {
         n_block_min = n_split_idx * n_blocks_per_split;
         n_block_max = std::min(cute::ceil_div(seqlen_k, kBlockN), (n_split_idx + 1) * n_blocks_per_split);
         if (Is_causal) {
-          n_block_max = std::min(n_block_max,                                                                                                                                                                                                     cute::ceil_div((m_block + 1) * kBlockM + seqlen_k - seqlen_q, kBlockN));
-        }          
-
+          n_block_max = std::min(n_block_max, cute::ceil_div((m_block + 1) * kBlockM + seqlen_k - seqlen_q, kBlockN));
+        }
     }
 
     template <typename Scheduler, typename SharedStorage>
