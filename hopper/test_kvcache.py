@@ -3,6 +3,7 @@ import torch
 import flash_attn_interface as fa3
 import flash_attn as fa2
 import torch.utils.benchmark as benchmark
+import time
 
 import argparse
 import math
@@ -13,7 +14,7 @@ parser.add_argument('--splits', type=int, default=1)
 
 args = parser.parse_args()
 
-def benchmark_fa_kv(fn, repeats=10, desc='', verbose=True, **kwinputs):
+def benchmark_fa_kv_old(fn, repeats=10, desc='', verbose=True, **kwinputs):
     """Use Pytorch Benchmark on the forward pass of an arbitrary function."""
     if verbose:
         print(desc, '- Forward pass')
@@ -24,8 +25,21 @@ def benchmark_fa_kv(fn, repeats=10, desc='', verbose=True, **kwinputs):
             )
     m = t.timeit(repeats)
     if verbose:
-        print(m)
+        print(desc, m)
     return t, m
+
+def benchmark_fa_kv(fn, repeats=10, *args, **kwargs):
+    # warmup
+    for _ in range(5):
+        fn(*args, **kwargs)
+    niters = repeats
+    torch.cuda.synchronize()
+    start = time.time()
+    for _ in range(niters):
+        fn(*args, **kwargs)
+    torch.cuda.synchronize()
+    end = time.time()
+    return (end - start) / niters
 
 def main():
     # *SAMPLE CONFIG*
@@ -46,7 +60,7 @@ def main():
     small_request_ntokens = 16
 
     # Input settings
-    query_seqlens = [900, 12, 3]
+    query_seqlens = [900, 12, 1]
     num_queries = len(query_seqlens)
     # Need to add empty queries to fill out `max_queries_per_batch`
     num_padding_queries = max_queries_per_batch - num_queries
@@ -125,8 +139,8 @@ def main():
     )
 
     print ('big')
-    print ('diff-max\n', (out0 - out2).abs().max().item())
-    print ('diff-mean\n', (out0 - out2).abs().mean().item())
+    print ('diff-max', (out0 - out2).abs().max().item())
+    print ('diff-mean', (out0 - out2).abs().mean().item())
 
 
     # Second for n-1 small queries
@@ -142,13 +156,13 @@ def main():
     )
 
     print ('small')
-    print ('diff-max\n', (out1 - out3).abs().max().item())
-    print ('diff-mean\n', (out1 - out3).abs().mean().item())
+    print ('diff-max', (out1 - out3).abs().max().item())
+    print ('diff-mean', (out1 - out3).abs().mean().item())
 
     #return
 
     print ('fa3')
-    benchmark_fa_kv(fa3.flash_attn_with_kvcache, repeats=10, desc='', verbose=True,  
+    time_fa3_big = benchmark_fa_kv(fa3.flash_attn_with_kvcache, repeats=10, 
         q=q_buf_large,
         k_cache=k_cache,
         v_cache=v_cache,
@@ -158,7 +172,7 @@ def main():
         num_splits=args.splits
     )
 
-    benchmark_fa_kv(fa3.flash_attn_with_kvcache, repeats=10, desc='', verbose=True,  
+    time_fa3_small = benchmark_fa_kv(fa3.flash_attn_with_kvcache, repeats=10,
         q=q_buf_small,
         k_cache=k_cache,
         v_cache=v_cache,
@@ -170,27 +184,28 @@ def main():
 
     print ('fa2 ')
 
-    for k in [1]:
-        benchmark_fa_kv(fa2.flash_attn_with_kvcache, repeats=10, desc='', verbose=True,
+    time_fa2_big = benchmark_fa_kv(fa2.flash_attn_with_kvcache, repeats=10, 
             q=q_buf_large,
             k_cache=k_cache,
             v_cache=v_cache,
             cache_seqlens=cache_seqlen_large,
             cache_batch_idx=cache_idx_large,
-        causal=bool(args.causal),
-        num_splits=args.splits
+            causal=bool(args.causal),
+            num_splits=args.splits
     )
 
-    for k in [1]:
-        benchmark_fa_kv(fa2.flash_attn_with_kvcache, repeats=10, desc='', verbose=True,
+    time_fa2_small = benchmark_fa_kv(fa2.flash_attn_with_kvcache, repeats=10, 
             q=q_buf_small,
             k_cache=k_cache,
             v_cache=v_cache,
             cache_seqlens=cache_seqlens_small,
             cache_batch_idx=cache_idxs_small,
-        causal=bool(args.causal),
-        num_splits=args.splits
+            causal=bool(args.causal),
+            num_splits=args.splits
     )
+
+    print ('big (split, fa3, fa2, ratio):', args.splits, time_fa3_big * 1000000, time_fa2_big * 1000000, time_fa3_big / time_fa2_big)
+    print ('small (split, fa3, fa2, ratio):', args.splits, time_fa3_small * 1000000, time_fa2_small * 1000000, time_fa3_small / time_fa2_small)
 
 if __name__ == "__main__":
     main()
