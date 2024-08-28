@@ -385,7 +385,9 @@ struct CollectiveEpilogueFwd {
             }
         }();
         static_assert(kBlockM <= NumMmaThreads);
-        if (thread_idx < seqlen_traits_q.actual_seq_len - m_block * kBlockM) { gLSE(thread_idx) = -INFINITY; }
+        if (thread_idx < min(kBlockM, seqlen_traits_q.actual_seq_len - m_block * kBlockM)) {
+            gLSE(thread_idx) = -INFINITY;
+        }
     }
 
 };
