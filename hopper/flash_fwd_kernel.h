@@ -124,7 +124,7 @@ __global__ void __launch_bounds__(Ktraits::kNWarps * cutlass::NumThreadsPerWarp,
                 int n_block_min, n_block_max;
                 collective_mainloop.get_n_block_min_max(
                     mainloop_params, m_block, seqlen_traits_q, seqlen_traits_k, n_split_idx, n_block_min, n_block_max);
-                if ((Is_causal || seqlen_traits_k.kUseVarSeqLen) && n_block_max <= n_block_min) {
+                if ((mainloop_params.num_splits > 1 || Is_causal || seqlen_traits_k.kUseVarSeqLen) && n_block_max <= n_block_min) {
                     scheduler.prefetch_next_work(scheduler_params, work_tile_info);
                     scheduler.broadcast_next_work(work_tile_info);
                     continue;
@@ -171,7 +171,7 @@ __global__ void __launch_bounds__(Ktraits::kNWarps * cutlass::NumThreadsPerWarp,
             int n_block_min, n_block_max;
             collective_mainloop.get_n_block_min_max(
                 mainloop_params, m_block, seqlen_traits_q, seqlen_traits_k, n_split_idx, n_block_min, n_block_max);
-            if ((Is_causal || seqlen_traits_k.kUseVarSeqLen) && n_block_max <= n_block_min) {  // We exit early and write 0 to gO and -inf to gLSE.
+            if ((mainloop_params.num_splits > 1 || Is_causal || seqlen_traits_k.kUseVarSeqLen) && n_block_max <= n_block_min) {  // We exit early and write 0 to gO and -inf to gLSE.
                 collective_epilogue.store_zero(epilogue_params, shared_storage, threadIdx.x - NumCopyThreads, block_coord, seqlen_traits_q);
                 continue;
             }

@@ -55,7 +55,7 @@ def main():
     cache_seqlen = 1024 * 16
 
     # Batching settings
-    ntokens = 4096 #1024
+    ntokens = 1024
     max_queries_per_batch = 4
     small_request_ntokens = 16
 
