@@ -173,6 +173,20 @@ void run_flash_fwd(Flash_fwd_params &params, cudaStream_t stream) {
         cutlass::ClusterLaunchParams launch_params{grid_combine, block_dims, cluster_dims, smem_size, stream};
         cutlass::launch_kernel_on_cluster(launch_params, kernel, params);
         //flash::combine_attn_seqk_parallel<Kernel_traits, kBlockM, 1, true><<<grid_combine, 128, 0, stream>>>(params);
+      }  else if (params.num_splits <= 64) {
+        void *kernel = (void *) flash::combine_attn_seqk_parallel<Kernel_traits, kBlockM, 6, true, Flash_fwd_params>;
+        int smem_size = sizeof(flash::SharedStorageLSE<float, Shape<Int<64>, Int<kBlockM+1>>>);
+        CHECK_CUDA(cudaFuncSetAttribute(kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, smem_size));
+        cutlass::ClusterLaunchParams launch_params{grid_combine, block_dims, cluster_dims, smem_size, stream};
+        cutlass::launch_kernel_on_cluster(launch_params, kernel, params);
+        //flash::combine_attn_seqk_parallel<Kernel_traits, kBlockM, 1, true><<<grid_combine, 128, 0, stream>>>(params);
+      } else if (params.num_splits <= 128) {
+        void *kernel = (void *) flash::combine_attn_seqk_parallel<Kernel_traits, kBlockM, 7, true, Flash_fwd_params>;
+        int smem_size = sizeof(flash::SharedStorageLSE<float, Shape<Int<128>, Int<kBlockM+1>>>);
+        CHECK_CUDA(cudaFuncSetAttribute(kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, smem_size));
+        cutlass::ClusterLaunchParams launch_params{grid_combine, block_dims, cluster_dims, smem_size, stream};
+        cutlass::launch_kernel_on_cluster(launch_params, kernel, params);
+        //flash::combine_attn_seqk_parallel<Kernel_traits, kBlockM, 1, true><<<grid_combine, 128, 0, stream>>>(params);
       }
       CHECK_CUDA_KERNEL_LAUNCH();
     }

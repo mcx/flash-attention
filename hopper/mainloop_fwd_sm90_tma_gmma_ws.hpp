@@ -225,7 +225,7 @@ struct CollectiveMainloopFwd {
         static constexpr int kBlockM = get<0>(TileShape_MNK{});
         static constexpr int kBlockN = get<1>(TileShape_MNK{});        
         // int const seqlen_q = Seqlen_traits::kUseVarSeqLen ? seqlen_traits_q.actual_seq_len : shape<0>(mainloop_params.layout_Q);
-        //int const full_seqlen_k = shape<0>(mainloop_params.layout_K);
+        int const full_seqlen_k = shape<0>(mainloop_params.layout_K);
         int const seqlen_q = seqlen_traits_q.actual_seq_len;
         int const seqlen_k = seqlen_traits_k.actual_seq_len;
 
