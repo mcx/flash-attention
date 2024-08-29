@@ -807,9 +807,7 @@ struct CollectiveMainloopFwd {
         pipeline_v.consumer_release(smem_pipe_read_v);  // release V, otherwise producers will hang
         ++smem_pipe_read_v;
 
-        //if (!Is_split) {
-          softmax.rescale_o(tOrO, scores_scale);
-        //}
+        softmax.rescale_o(tOrO, scores_scale);
         return;
     }
 
@@ -1037,9 +1035,7 @@ struct CollectiveMainloopFwd {
         cutlass::arch::NamedBarrier::arrive(NumMmaThreads + cutlass::NumThreadsPerWarpGroup, static_cast<int>(FwdNamedBarriers::QueryEmpty) /*id*/);
         
         cute::copy(softmax.template finalize</*Check_inf=*/Is_causal>(tSrS, mainloop_params.softmax_scale_log2), scores_scale);
-        if (!Is_split) {
-          softmax.rescale_o(tOrO, scores_scale);
-        }
+        softmax.rescale_o(tOrO, scores_scale);
         return;
     }
 

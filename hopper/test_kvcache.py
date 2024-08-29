@@ -11,6 +11,8 @@ import math
 parser = argparse.ArgumentParser(description='Process some integers.')
 parser.add_argument('--causal', action='store_true')
 parser.add_argument('--splits', type=int, default=1)
+parser.add_argument('--repeats', type=int, default=10)
+parser.add_argument('--validate', action='store_true')
 
 args = parser.parse_args()
 
@@ -30,8 +32,8 @@ def benchmark_fa_kv_old(fn, repeats=10, desc='', verbose=True, **kwinputs):
 
 def benchmark_fa_kv(fn, repeats=10, *args, **kwargs):
     # warmup
-    for _ in range(5):
-        fn(*args, **kwargs)
+    #for _ in range(5):
+    #    fn(*args, **kwargs)
     niters = repeats
     torch.cuda.synchronize()
     start = time.time()
@@ -102,9 +104,67 @@ def main():
         : max_queries_per_batch - 1
     ]
 
-    # Call flash attn
-    # First for the single full-sized query
-    out0 = fa3.flash_attn_with_kvcache(
+    if args.validate:
+        # Call flash attn
+        # First for the single full-sized query
+        out0 = fa3.flash_attn_with_kvcache(
+            q=q_buf_large,
+            k_cache=k_cache,
+            v_cache=v_cache,
+            cache_seqlens=cache_seqlen_large,
+            cache_batch_idx=cache_idx_large,
+            causal=bool(args.causal),
+            num_splits=args.splits
+           #num_splits=1
+        )   
+
+        # Second for n-1 small queries
+        out1 = fa3.flash_attn_with_kvcache(
+            q=q_buf_small,
+            k_cache=k_cache,
+            v_cache=v_cache,
+            cache_seqlens=cache_seqlens_small,
+            cache_batch_idx=cache_idxs_small,
+            causal=bool(args.causal),
+            num_splits=args.splits
+        )
+
+        # Call flash attn
+        # First for the single full-sized query
+        out2 = fa2.flash_attn_with_kvcache(
+            q=q_buf_large,
+            k_cache=k_cache,
+            v_cache=v_cache,
+            cache_seqlens=cache_seqlen_large,
+            cache_batch_idx=cache_idx_large,
+            causal=bool(args.causal),
+            num_splits=args.splits
+        )
+
+        print ('big')
+        print ('diff-max', (out0 - out2).abs().max().item())
+        print ('diff-mean', (out0 - out2).abs().mean().item())
+
+
+        # Second for n-1 small queries
+        out3 = fa2.flash_attn_with_kvcache(
+            q=q_buf_small,
+            k_cache=k_cache,
+            v_cache=v_cache,
+            cache_seqlens=cache_seqlens_small,
+            cache_batch_idx=cache_idxs_small,
+            causal=bool(args.causal),
+            num_splits=args.splits
+            #num_splits=1
+        )
+
+        print ('small')
+        print ('diff-max', (out1 - out3).abs().max().item())
+        print ('diff-mean', (out1 - out3).abs().mean().item())
+
+
+    print ('fa3', args.repeats)
+    time_fa3_big = benchmark_fa_kv(fa3.flash_attn_with_kvcache, repeats=args.repeats, 
         q=q_buf_large,
         k_cache=k_cache,
         v_cache=v_cache,
@@ -112,67 +172,9 @@ def main():
         cache_batch_idx=cache_idx_large,
         causal=bool(args.causal),
         num_splits=args.splits
-        #num_splits=1
     )
 
-    # Second for n-1 small queries
-    out1 = fa3.flash_attn_with_kvcache(
-        q=q_buf_small,
-        k_cache=k_cache,
-        v_cache=v_cache,
-        cache_seqlens=cache_seqlens_small,
-        cache_batch_idx=cache_idxs_small,
-        causal=bool(args.causal),
-        num_splits=args.splits
-    )
-
-      # Call flash attn
-    # First for the single full-sized query
-    out2 = fa2.flash_attn_with_kvcache(
-        q=q_buf_large,
-        k_cache=k_cache,
-        v_cache=v_cache,
-        cache_seqlens=cache_seqlen_large,
-        cache_batch_idx=cache_idx_large,
-        causal=bool(args.causal),
-        num_splits=args.splits
-    )
-
-    print ('big')
-    print ('diff-max', (out0 - out2).abs().max().item())
-    print ('diff-mean', (out0 - out2).abs().mean().item())
-
-
-    # Second for n-1 small queries
-    out3 = fa2.flash_attn_with_kvcache(
-        q=q_buf_small,
-        k_cache=k_cache,
-        v_cache=v_cache,
-        cache_seqlens=cache_seqlens_small,
-        cache_batch_idx=cache_idxs_small,
-        causal=bool(args.causal),
-        num_splits=args.splits
-        #num_splits=1
-    )
-
-    print ('small')
-    print ('diff-max', (out1 - out3).abs().max().item())
-    print ('diff-mean', (out1 - out3).abs().mean().item())
-
-    #return
-
-    print ('fa3')
-    time_fa3_big = benchmark_fa_kv(fa3.flash_attn_with_kvcache, repeats=10, 
-        q=q_buf_large,
-        k_cache=k_cache,
-        v_cache=v_cache,
-        cache_seqlens=cache_seqlen_large,
-        cache_batch_idx=cache_idx_large,
-        causal=bool(args.causal),
-        num_splits=args.splits
-    )
-
-    time_fa3_small = benchmark_fa_kv(fa3.flash_attn_with_kvcache, repeats=10,
+    time_fa3_small = benchmark_fa_kv(fa3.flash_attn_with_kvcache, repeats=args.repeats,
         q=q_buf_small,
         k_cache=k_cache,
         v_cache=v_cache,
@@ -184,7 +186,7 @@ def main():
 
     print ('fa2 ')
 
-    time_fa2_big = benchmark_fa_kv(fa2.flash_attn_with_kvcache, repeats=10, 
+    time_fa2_big = benchmark_fa_kv(fa2.flash_attn_with_kvcache, repeats=args.repeats, 
             q=q_buf_large,
             k_cache=k_cache,
             v_cache=v_cache,
@@ -194,7 +196,7 @@ def main():
             num_splits=args.splits
     )
 
-    time_fa2_small = benchmark_fa_kv(fa2.flash_attn_with_kvcache, repeats=10, 
+    time_fa2_small = benchmark_fa_kv(fa2.flash_attn_with_kvcache, repeats=args.repeats, 
             q=q_buf_small,
             k_cache=k_cache,
             v_cache=v_cache,
