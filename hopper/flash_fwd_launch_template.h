@@ -188,10 +188,12 @@ void run_mha_fwd_hdim64(Flash_fwd_params &params, cudaStream_t stream) {
     BOOL_SWITCH(params.is_causal, Is_causal, [&] {
         SEQLEN_SWITCH(params.cu_seqlens_q, Seqlen_traits, [&] {
                 BOOL_SWITCH(params.num_splits > 1, Is_split, [&] {
+                BOOL_SWITCH(params.is_split_hp, Is_split_hp, [&] {
             run_flash_fwd<
-                Flash_fwd_kernel_traits<Headdim, 192, 128, 16, 2, false, 1, T, Is_split>, 
+                Flash_fwd_kernel_traits<Headdim, 192, 128, 16, 2, false, 1, T, Is_split, Is_split_hp>, 
                 Is_causal, Seqlen_traits, Is_split
             >(params, stream);
+        });
         });
         });
     });
@@ -205,10 +207,12 @@ void run_mha_fwd_hdim128(Flash_fwd_params &params, cudaStream_t stream) {
             // Only use Cluster if number of tiles along seqlen_q is even and not Is_causal
             BOOL_SWITCH(cutlass::ceil_div(params.seqlen_q, 128) % 2 == 0 && !Is_causal && !Seqlen_traits::kUseVarSeqLen && params.num_splits <=1, UseCluster, [&] {
                 BOOL_SWITCH(params.num_splits > 1, Is_split, [&] {
+                BOOL_SWITCH(params.is_split_hp, Is_split_hp, [&] {
                 run_flash_fwd<
-                    Flash_fwd_kernel_traits<Headdim, 128, Is_causal ? 128 : 176, 12, 2, false, UseCluster ? 2 : 1, T, Is_split>, 
+                    Flash_fwd_kernel_traits<Headdim, 128, Is_causal ? 128 : 176, 12, 2, false, UseCluster ? 2 : 1, T, Is_split, Is_split_hp>, 
                     Is_causal, Seqlen_traits, Is_split
                 >(params, stream);
+            });
             });
             });
         });
@@ -222,12 +226,16 @@ void run_mha_fwd_hdim256(Flash_fwd_params &params, cudaStream_t stream) {
         SEQLEN_SWITCH(params.cu_seqlens_q, Seqlen_traits, [&] {
             // Only use Cluster if number of tiles along seqlen_q is even
             BOOL_SWITCH(cutlass::ceil_div(params.seqlen_q, 128) % 2 == 0 && !Is_causal && !Seqlen_traits::kUseVarSeqLen, UseCluster, [&] {
+             BOOL_SWITCH(params.num_splits > 1, Is_split, [&] {
+                BOOL_SWITCH(params.is_split_hp, Is_split_hp, [&] {
                 run_flash_fwd<
-                    Flash_fwd_kernel_traits<Headdim, 128, 80, 12, 2, false, UseCluster ? 2 : 1, T>, 
-                    Is_causal, Seqlen_traits
+                    Flash_fwd_kernel_traits<Headdim, 128, 80, 12, 2, false, UseCluster ? 2 : 1, T, Is_split, Is_split_hp>, 
+                    Is_causal, Seqlen_traits, Is_split
                 >(params, stream);
             });
+            });
         });
+    });
     });
 }
 

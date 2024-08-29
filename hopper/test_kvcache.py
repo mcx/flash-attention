@@ -13,6 +13,7 @@ parser.add_argument('--causal', action='store_true')
 parser.add_argument('--splits', type=int, default=1)
 parser.add_argument('--repeats', type=int, default=10)
 parser.add_argument('--validate', action='store_true')
+parser.add_argument('--is-split-hp', action='store_true')
 
 args = parser.parse_args()
 
@@ -114,7 +115,8 @@ def main():
             cache_seqlens=cache_seqlen_large,
             cache_batch_idx=cache_idx_large,
             causal=bool(args.causal),
-            num_splits=args.splits
+            num_splits=args.splits,
+            is_split_hp=bool(args.is_split_hp)
            #num_splits=1
         )   
 
@@ -126,7 +128,8 @@ def main():
             cache_seqlens=cache_seqlens_small,
             cache_batch_idx=cache_idxs_small,
             causal=bool(args.causal),
-            num_splits=args.splits
+            num_splits=args.splits,
+            is_split_hp=bool(args.is_split_hp)
         )
 
         # Call flash attn
@@ -171,7 +174,8 @@ def main():
         cache_seqlens=cache_seqlen_large,
         cache_batch_idx=cache_idx_large,
         causal=bool(args.causal),
-        num_splits=args.splits
+        num_splits=args.splits,
+        is_split_hp=bool(args.is_split_hp)
     )
 
     time_fa3_small = benchmark_fa_kv(fa3.flash_attn_with_kvcache, repeats=args.repeats,
@@ -181,7 +185,8 @@ def main():
         cache_seqlens=cache_seqlens_small,
         cache_batch_idx=cache_idxs_small,
         causal=bool(args.causal),
-        num_splits=args.splits
+        num_splits=args.splits,
+        is_split_hp=bool(args.is_split_hp)
     )
 
     print ('fa2 ')

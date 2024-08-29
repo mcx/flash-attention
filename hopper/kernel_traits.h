@@ -57,11 +57,11 @@ struct SharedStorageQKVOVt {
 
 // If Share_Q_K_smem is true, that forces Is_Q_in_regs to be true
 template<int kHeadDim_, int kBlockM_, int kBlockN_, int kNWarps_, int kStages_, bool Is_Q_in_regs_=false,
-         int kClusterM_ = 1, typename elem_type=cutlass::half_t, bool Is_split=false>
+         int kClusterM_ = 1, typename elem_type=cutlass::half_t, bool Is_split=false, bool Is_split_hp=false>
 struct Flash_fwd_kernel_traits {
     using Element = elem_type;
     using ElementAccum = float;
-    using OutputType = std::conditional_t<Is_split, float, elem_type>;
+    using OutputType = std::conditional_t<Is_split && !Is_split_hp, float, elem_type>;
     using index_t = int64_t;
 
     // The number of threads.

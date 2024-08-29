@@ -402,6 +402,7 @@ def flash_attn_with_kvcache(
     rotary_interleaved=True,
     alibi_slopes=None,
     num_splits=0,
+    is_split_hp=False,
     return_softmax_lse=False,
 ):
     """
@@ -524,5 +525,6 @@ def flash_attn_with_kvcache(
         softcap,
         rotary_interleaved,
         num_splits,
+        is_split_hp
     )
     return (out, softmax_lse) if return_softmax_lse else out

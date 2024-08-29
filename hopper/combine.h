@@ -25,6 +25,7 @@ template<typename Kernel_traits, int kBlockM, int Log_max_splits, bool Is_even_K
 __global__ void combine_attn_seqk_parallel(Params  const params) {
     using Element = typename Kernel_traits::Element;
     using ElementAccum = typename Kernel_traits::ElementAccum;
+    using OutputType = typename Kernel_traits::OutputType;
     using index_t = typename Kernel_traits::index_t;
     constexpr int kMaxSplits = 1 << Log_max_splits;
     constexpr int kHeadDim = Kernel_traits::kHeadDim;
@@ -140,20 +141,20 @@ __global__ void combine_attn_seqk_parallel(Params  const params) {
     __syncthreads();
 
     const index_t row_offset_oaccum = bidx * kBlockM * params.d_rounded;
-    Tensor gOaccum = make_tensor(make_gmem_ptr(reinterpret_cast<ElementAccum *>(params.oaccum_ptr) + row_offset_oaccum),
+    Tensor gOaccum = make_tensor(make_gmem_ptr(reinterpret_cast<OutputType *>(params.oaccum_ptr) + row_offset_oaccum),
                                  Shape<Int<kBlockM>, Int<kHeadDim>>{},
                                  Stride<Int<kHeadDim>, _1>{});
     constexpr int kBlockN = kNThreads / kBlockM;
     using GmemLayoutAtomOaccum = Layout<Shape<Int<kBlockM>, Int<kBlockN>>, Stride<Int<kBlockN>, _1>>;
     using GmemTiledCopyOaccum = decltype(
-        make_tiled_copy(Copy_Atom<DefaultCopy, ElementAccum>{},
+        make_tiled_copy(Copy_Atom<DefaultCopy, OutputType>{},
                         GmemLayoutAtomOaccum{},
                         Layout<Shape < _1, _4>>{}));  // Val layout, 4 vals per store
     GmemTiledCopyOaccum gmem_tiled_copy_Oaccum;
     auto gmem_thr_copy_Oaccum = gmem_tiled_copy_Oaccum.get_thread_slice(tidx);
     Tensor tOgOaccum = gmem_thr_copy_Oaccum.partition_S(gOaccum);
-    Tensor tOrO = make_tensor<ElementAccum>(shape(tOgOaccum));
-    Tensor tOrOaccum = make_tensor<ElementAccum>(shape(tOgOaccum));
+    Tensor tOrO = make_tensor<OutputType>(shape(tOgOaccum));
+    Tensor tOrOaccum = make_tensor<OutputType>(shape(tOgOaccum));
     clear(tOrO);
 
     // Predicates
@@ -179,7 +180,7 @@ __global__ void combine_attn_seqk_parallel(Params  const params) {
             for (int k = 0; k < size<2>(tOrOaccum); ++k) {
                 #pragma unroll
                 for (int i = 0; i < size<0>(tOrOaccum); ++i) {
-                    tOrO(i, m, k) += lse_scale * tOrOaccum(i, m, k);
+                    tOrO(i, m, k) += OutputType(lse_scale * tOrOaccum(i, m, k));
                     //tOrO(i, m, k) += tOrOaccum(i, m, k);
                 }
             }

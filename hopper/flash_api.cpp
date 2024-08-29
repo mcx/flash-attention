@@ -233,12 +233,13 @@ void set_params_dgrad(Flash_bwd_params &params,
 std::tuple<at::Tensor, at::Tensor> set_params_splitkv(Flash_fwd_params &params, const int batch_size,
     const int num_heads, const int head_size, const int max_seqlen_k, const int max_seqlen_q,
     const int head_size_rounded, const float p_dropout,
-    const int num_splits, cudaDeviceProp *dprops, struct c10::TensorOptions opts) {
+    const int num_splits, bool is_split_hp, cudaDeviceProp *dprops, struct c10::TensorOptions opts) {
 
     // This needs to match with run_mha_fwd_splitkv_dispatch
     // Technically kBlockM = 64 only for the splitKV kernels, not the standard kernel.
     // In any case we don't expect seqlen_q to be larger than 64 for inference.
     params.num_splits = num_splits;
+    params.is_split_hp = is_split_hp;
     at::Tensor softmax_lse_accum;
     at::Tensor out_accum;
 
@@ -1002,7 +1003,8 @@ mha_fwd_kvcache(at::Tensor &q,                 // batch_size x seqlen_q x num_he
                 int window_size_right,
                 const float softcap,
                 bool is_rotary_interleaved,   // if true, rotary combines indices 0 & 1, else indices 0 & rotary_dim / 2
-                int num_splits
+                int num_splits,
+		bool is_split_hp             // if true, the intermediate splits  are in half precision instead of float.
                 ) {
 
     auto dprops = at::cuda::getCurrentDeviceProperties();
@@ -1237,7 +1239,7 @@ mha_fwd_kvcache(at::Tensor &q,                 // batch_size x seqlen_q x num_he
     at::Tensor softmax_lse_accum, out_accum;
     std::tie(softmax_lse_accum, out_accum) = set_params_splitkv(
         params, batch_size, num_heads, head_size, seqlen_k, seqlen_q,
-        head_size_rounded, /*dropout*/ 0.f, num_splits, dprops, opts);
+        head_size_rounded, /*dropout*/ 0.f, num_splits, is_split_hp, dprops, opts);
 
     if (paged_KV) {
         params.block_table = block_table.data_ptr<int>();

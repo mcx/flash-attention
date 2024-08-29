@@ -139,6 +139,8 @@ struct Flash_fwd_params : public Qkv_params {
     bool unpadded_lse; // For varlen paths: LSE is in [nheads, total_seqlen_q] format instead of [b, nheads, seqlen_q].
 
     int * __restrict__ tile_count_semaphore;
+
+    bool is_split_hp; // For intermediate splits in fp16 instead of fp32.
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
